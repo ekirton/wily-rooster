@@ -32,7 +32,13 @@ from wily_rooster.extraction.pipeline import run_extraction
     default=False,
     help="Enable debug logging for extraction (shows raw About output).",
 )
-def main(target: str, db: Path, verbose: bool) -> None:
+@click.option(
+    "--progress",
+    is_flag=True,
+    default=False,
+    help="Print progress messages to stderr during extraction.",
+)
+def main(target: str, db: Path, verbose: bool, progress: bool) -> None:
     """Extract and index Coq libraries into a SQLite database."""
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(message)s")
@@ -40,14 +46,14 @@ def main(target: str, db: Path, verbose: bool) -> None:
 
     targets = [t.strip() for t in target.split("+") if t.strip()]
 
-    def progress(msg: str) -> None:
-        click.echo(msg)
+    def _progress(msg: str) -> None:
+        click.echo(msg, err=True)
 
     try:
         report = run_extraction(
             targets=targets,
             db_path=db,
-            progress_callback=progress,
+            progress_callback=_progress if progress else None,
         )
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)

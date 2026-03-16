@@ -102,10 +102,15 @@ This runs the offline extraction pipeline:
 5. Resolves dependency edges
 6. Writes everything to a single SQLite database
 
-Progress is reported as:
+Pass `--progress` to see extraction status on stderr:
 ```
+Discovering libraries...
+Discovered 312 .vo files
+Collecting declarations [1/312]
 Extracting declarations [1234/5678]
 Resolving dependencies [1234/5678]
+Computing symbol frequencies...
+Finalizing index...
 ```
 
 ### 2. Start the MCP Server

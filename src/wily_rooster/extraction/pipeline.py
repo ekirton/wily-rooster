@@ -332,9 +332,13 @@ def run_extraction(
         Partial database files are deleted on fatal errors.
     """
     # Discover libraries
+    if progress_callback is not None:
+        progress_callback("Discovering libraries...")
     all_vo_files: list[Path] = []
     for t in targets:
         all_vo_files.extend(discover_libraries(t))
+    if progress_callback is not None:
+        progress_callback(f"Discovered {len(all_vo_files)} .vo files")
 
     # Delete existing database file if present (idempotent re-indexing)
     if db_path.exists():
@@ -354,7 +358,11 @@ def run_extraction(
         # Collect all declarations across all .vo files
         all_declarations: list[tuple[str, str, Any, Path]] = []
         try:
-            for vo_path in all_vo_files:
+            for idx, vo_path in enumerate(all_vo_files, 1):
+                if progress_callback is not None:
+                    progress_callback(
+                        f"Collecting declarations [{idx}/{len(all_vo_files)}]"
+                    )
                 raw_decls = backend.list_declarations(vo_path)
                 for name, kind, constr_t in raw_decls:
                     all_declarations.append((name, kind, constr_t, vo_path))
@@ -371,6 +379,8 @@ def run_extraction(
         decl_data: dict[str, tuple[str, list[tuple[str, str]]]] = {}
         _query_fn = getattr(backend, "query_declaration_data", None)
         if _query_fn is not None:
+            if progress_callback is not None:
+                progress_callback("Querying declaration data...")
             decl_names = [name for name, _kind, _constr_t, _vo in all_declarations]
             try:
                 batch_result = _query_fn(decl_names)
@@ -444,6 +454,8 @@ def run_extraction(
         # ------------------------------------------------------------------
         # Post-processing
         # ------------------------------------------------------------------
+        if progress_callback is not None:
+            progress_callback("Computing symbol frequencies...")
         # Compute symbol frequencies
         symbol_counts: Counter[str] = Counter()
         for result in all_results:
@@ -454,6 +466,8 @@ def run_extraction(
 
         writer.insert_symbol_freq(dict(symbol_counts))
 
+        if progress_callback is not None:
+            progress_callback("Finalizing index...")
         # Write metadata
         writer.write_metadata(
             schema_version="1",

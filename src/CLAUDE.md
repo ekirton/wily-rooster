@@ -6,14 +6,16 @@ The `specification/*.md` files are the authoritative source for all implementati
 
 Authority chain: `specification/*.md` → `doc/architecture/` → `doc/features/` → `doc/requirements/`
 
-## Tests Are Immutable
+## Tests and Specifications Are Immutable
 
-The test files in `test/` **must not be modified** when writing implementation code. The tests encode the specification contracts and were written first (TDD). Implementation must conform to the tests, not the other way around.
+Test files in `test/` and specification documents in `specification/` **must not be modified** when writing implementation code. Tests encode the specification contracts and were written first (TDD). Implementation must conform to both — not the other way around.
 
 - If a test fails, fix the implementation — not the test.
 - If a test imports from a specific module path, create that module at that path.
 - If a test expects a specific function signature, implement that exact signature.
 - If a test expects a specific exception type, raise that exact exception.
+- If a specification appears ambiguous or incorrect, file feedback in `specification/feedback/` — do not change the spec.
+- If a test appears to conflict with its specification, file feedback in `test/feedback/` — do not change the test.
 
 ## Import Paths
 

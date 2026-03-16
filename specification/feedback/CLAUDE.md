@@ -64,12 +64,13 @@ Example: feedback for `specification/storage.md` goes in `specification/feedback
 - **Reference cross-spec conflicts explicitly.** If two specs disagree, name both files and quote both passages.
 - **Use absolute section references** (e.g., "Section 3.2, `dependencies` table"), not relative ones (e.g., "the section above").
 - **No fixes in feedback files.** Feedback describes what is wrong and suggests a resolution. The specifier decides.
-- **Delete resolved issues.** When the specifier resolves an issue, remove it from the feedback file. Delete empty feedback files entirely.
+- **Remove resolved issues.** When the specifier resolves an issue, delete it from the feedback file. Do not mark it as resolved — remove it entirely.
+- **Delete empty feedback files.** When all issues in a feedback file are resolved and removed, delete the file. No empty feedback files.
 - **Number issues sequentially.** Renumber after deletions to keep the sequence contiguous.
 
 ## Lifecycle
 
 1. **Created** during implementation planning or code generation when a spec problem is found.
 2. **Read** by the specifier during the next specification revision pass.
-3. **Issues removed** as the specifier resolves them in the source specification.
-4. **File deleted** when all issues are resolved (no empty feedback files).
+3. **Issues removed** as the specifier resolves them in the source specification. Do not mark as resolved — delete the issue entirely.
+4. **File deleted** when all issues are resolved and removed (no empty feedback files).

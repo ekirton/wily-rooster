@@ -16,3 +16,12 @@
 **Relationship to other types:** Data model documents are referenced by architecture documents that share the same entities. They are consumed by the LLM spec-extraction pipeline alongside architecture documents. When an entity is defined in both a data model document and an architecture document, the data model document is authoritative for the entity's structure, and the architecture document is authoritative for how that entity is used within the component.
 
 **One per:** domain area or shared data concern
+
+**Standards**
+
+For each entity, specify:
+
+* The entity name and its purpose (one sentence)
+* Its fields, with types expressed as domain concepts, not language-specific types
+* Validation rules and constraints on each field
+* Relationships to other entities. State relationships in terms of cardinality and ownership.

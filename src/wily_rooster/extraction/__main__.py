@@ -1,5 +1,6 @@
 """CLI entry point for ``python -m wily_rooster.extraction``."""
 
+import logging
 import sys
 from pathlib import Path
 
@@ -24,8 +25,19 @@ from wily_rooster.extraction.pipeline import run_extraction
     type=click.Path(path_type=Path),
     help="Path to the output SQLite index database.",
 )
-def main(target: str, db: Path) -> None:
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    default=False,
+    help="Enable debug logging for extraction (shows raw About output).",
+)
+def main(target: str, db: Path, verbose: bool) -> None:
     """Extract and index Coq libraries into a SQLite database."""
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(message)s")
+        logging.getLogger("wily_rooster.extraction").setLevel(logging.DEBUG)
+
     targets = [t.strip() for t in target.split("+") if t.strip()]
 
     def progress(msg: str) -> None:

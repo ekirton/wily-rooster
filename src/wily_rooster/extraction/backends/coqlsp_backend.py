@@ -353,6 +353,7 @@ class CoqLspBackend:
         all_text = "\n".join(
             m["text"] for m in messages if m.get("level", 3) != 1
         )
+        logger.debug("About output for %s: %r", name, all_text)
 
         # Rocq 9.x: parse "Expands to: Constant/Inductive/Constructor ..."
         expands_match = _EXPANDS_TO_RE.search(all_text)

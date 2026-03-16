@@ -1,22 +1,19 @@
 # Before You Start
 
-Read `index.md` to understand what documents exist in this directory and their purposes. This allows you to intelligently navigate and read relevant documents as needed.
+Read `index.md` to understand what documents exist in this directory and their purposes.
 
-The files in this folder review the state of the art but shall not discuss or mention the product described in the parent folder.
+## Research Documents
 
-### Research Documents
-
-**Layer:** Reference — supports all layers (evidence base for decisions at any level)
+**Layer:** Reference — supports all layers
 
 **Location:** `doc/background/<topic>.md`
 
-**Purpose:** Captures background research that informs specification decisions — technology surveys, current art, academic literature reviews, and benchmarks. Research documents are reference material; they do not contain requirements or specification statements.
+**When writing or editing research documents:**
 
-**Authoritative for:**
-- Factual findings and source citations
-- Comparative analysis of approaches
-- Evidence supporting or challenging design decisions
-
-**Relationship to other types:** Research documents are referenced by PRDs, feature documents, architecture documents, and specification standards to ground design decisions in evidence. They are not consumed by the LLM spec-extraction pipeline.
+- Capture background research: technology surveys, current art, academic literature reviews, benchmarks.
+- Include factual findings with source citations, comparative analysis of approaches, and evidence supporting or challenging design decisions.
+- Do **not** discuss or mention the product described in the parent folder. These files review the state of the art only.
+- Do **not** include requirements or specification statements — research documents are reference material.
+- These are not consumed by the LLM spec-extraction pipeline.
 
 **One per:** research topic or investigation

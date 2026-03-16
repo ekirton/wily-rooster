@@ -99,10 +99,11 @@ Both extraction passes report progress:
 ## Index Construction
 
 The indexing command:
-1. Detects the installed Coq/Rocq version and target library versions
-2. Extracts all declarations through the pipeline above
-3. Computes global symbol frequencies across all declarations
-4. Writes everything to a single SQLite database
-5. Records the index schema version and library versions in `index_meta`
+1. Deletes any existing database file at the output path
+2. Detects the installed Coq/Rocq version and target library versions
+3. Extracts all declarations through the pipeline above
+4. Computes global symbol frequencies across all declarations
+5. Writes everything to a single SQLite database
+6. Records the index schema version and library versions in `index_meta`
 
 The entire process runs without GPU, network access, or external API keys.

@@ -41,6 +41,10 @@ The database records an **index schema version** — a version identifier writte
 
 Re-indexing is always a full rebuild. The index is a derived artifact — rebuilding from scratch is simpler and more reliable than migration, and at the scale of Coq libraries (< 50K declarations) completes in acceptable time.
 
+## Idempotent Re-Indexing
+
+The indexing command is safe to run repeatedly. If an index database already exists at the output path, it is deleted automatically before the new index is created. No confirmation is required — the index is a derived artifact that can always be regenerated from the installed Coq libraries, and rebuilding is fast enough that the cost of an accidental re-index is negligible.
+
 ## Missing or Corrupt Index
 
 When the MCP server starts and no index database exists at the configured path, or the database is unreadable, the server returns a clear error message indicating the index is missing and how to create it. Search tools return errors rather than empty results so the LLM can relay actionable guidance to the user.

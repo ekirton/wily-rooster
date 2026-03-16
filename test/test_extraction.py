@@ -1058,7 +1058,115 @@ class TestFullRunIntegration:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 9. ExtractionError
+# 9. Idempotent Re-Indexing (specification §4.7)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestIdempotentReIndexing:
+    """When an existing database file exists at db_path, it is deleted
+    before creating a new index."""
+
+    def test_existing_db_is_deleted_and_rebuilt(self, tmp_path):
+        """GIVEN an existing SQLite database at the output path
+        WHEN run_extraction is called
+        THEN the existing file is deleted before the new index is created."""
+        from wily_rooster.extraction.pipeline import run_extraction
+
+        db_path = tmp_path / "index.db"
+
+        # Create a pre-existing database with a table to prove it gets replaced
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE sentinel (id INTEGER PRIMARY KEY)")
+        conn.close()
+        assert db_path.exists()
+
+        backend = _make_mock_backend(
+            declarations=[("A.decl1", "Lemma", {"mock": "constr"})]
+        )
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {"A.decl1": 1}
+
+        mock_result = Mock()
+        mock_result.name = "A.decl1"
+        mock_result.dependency_names = []
+
+        # Track whether the file was deleted before create_writer was called
+        file_existed_at_create_time = []
+
+        def mock_create_writer(path):
+            file_existed_at_create_time.append(path.exists())
+            return writer
+
+        with (
+            patch(
+                "wily_rooster.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/A.vo")],
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_writer",
+                side_effect=mock_create_writer,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.process_declaration",
+                return_value=mock_result,
+            ),
+        ):
+            run_extraction(targets=["stdlib"], db_path=db_path)
+
+        # The file must NOT have existed when create_writer was called
+        assert len(file_existed_at_create_time) == 1
+        assert file_existed_at_create_time[0] is False, (
+            "Existing database file was not deleted before create_writer was called"
+        )
+
+    def test_no_existing_db_creates_normally(self, tmp_path):
+        """GIVEN no file at the output path
+        WHEN run_extraction is called
+        THEN the index is created normally."""
+        from wily_rooster.extraction.pipeline import run_extraction
+
+        db_path = tmp_path / "fresh.db"
+        assert not db_path.exists()
+
+        backend = _make_mock_backend(
+            declarations=[("A.decl1", "Lemma", {"mock": "constr"})]
+        )
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {"A.decl1": 1}
+
+        mock_result = Mock()
+        mock_result.name = "A.decl1"
+        mock_result.dependency_names = []
+
+        with (
+            patch(
+                "wily_rooster.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/A.vo")],
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.process_declaration",
+                return_value=mock_result,
+            ),
+        ):
+            run_extraction(targets=["stdlib"], db_path=db_path)
+
+        writer.finalize.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. ExtractionError
 # ═══════════════════════════════════════════════════════════════════════════
 
 

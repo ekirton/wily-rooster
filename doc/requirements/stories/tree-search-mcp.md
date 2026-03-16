@@ -49,7 +49,21 @@ Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
 - GIVEN a user project directory with compiled `.vo` files WHEN the user runs the indexing command targeting that directory THEN project declarations are indexed into the same database as library declarations
 - GIVEN a previously indexed user project WHEN the user re-runs the indexing command after modifying some files THEN only changed declarations are updated without rebuilding the entire index
 
-### 1.4 Detect and Rebuild Stale Indexes
+### 1.4 Idempotent Re-Indexing
+
+**As a** Coq developer re-running the indexing command,
+**I want** the existing index database to be replaced automatically,
+**so that** I can re-index at any time without manually deleting the old database.
+
+**Priority:** P0
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN an existing index database at the output path WHEN the indexing command is run THEN the existing file is deleted before the new index is created
+- GIVEN no existing index database at the output path WHEN the indexing command is run THEN the new index is created normally
+- GIVEN an existing index database WHEN the indexing command deletes it THEN no confirmation prompt is displayed to the user
+
+### 1.5 Detect and Rebuild Stale Indexes
 
 **As a** Coq developer who has updated an indexed library,
 **I want** the system to detect the update and rebuild the index immediately,
@@ -63,7 +77,7 @@ Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
 - GIVEN a detected library version change WHEN the MCP server receives a query THEN the index is rebuilt before returning results
 - GIVEN a stale index is detected WHEN the rebuild completes THEN the new index replaces the old one atomically
 
-### 1.5 Index Version Compatibility
+### 1.6 Index Version Compatibility
 
 **As a** Coq developer who has updated the search tool,
 **I want** the system to reject incompatible indexes and re-index from scratch,

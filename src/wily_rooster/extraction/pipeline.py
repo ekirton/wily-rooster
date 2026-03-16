@@ -320,6 +320,10 @@ def run_extraction(
     for t in targets:
         all_vo_files.extend(discover_libraries(t))
 
+    # Delete existing database file if present (idempotent re-indexing)
+    if db_path.exists():
+        db_path.unlink()
+
     # Create backend and writer
     backend = create_backend()
     writer = create_writer(db_path)

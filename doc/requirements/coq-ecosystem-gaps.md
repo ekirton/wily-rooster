@@ -75,6 +75,7 @@ Cross-references:
 | R-P0-15 | Indexing must not require a GPU, external API keys, or network access |
 | R-P0-16 | Record the index schema version in the database; reject incompatible indexes at startup |
 | R-P0-17 | When the indexed library is updated, rebuild the index immediately before serving queries |
+| R-P0-18 | When the indexing command is run and an existing database file exists at the output path, delete it and rebuild from scratch without prompting |
 
 ### P1 — Should Have
 

@@ -111,7 +111,22 @@ After both passes:
 2. Write index metadata: `schema_version`, `coq_version`, `mathcomp_version`, `created_at`
 3. Call `writer.finalize()` — FTS5 rebuild + integrity check
 
-### 4.7 Library Discovery
+### 4.7 Existing Database Replacement
+
+When `run_extraction` is called and a file exists at `db_path`:
+
+- REQUIRES: `db_path` is a writable filesystem path.
+- ENSURES: The existing file at `db_path` is deleted before `IndexWriter.create()` is called. No confirmation is requested.
+
+> **Given** an existing SQLite database at the output path,
+> **When** `run_extraction` is called,
+> **Then** the existing file is deleted and a fresh index is created.
+
+> **Given** no file at the output path,
+> **When** `run_extraction` is called,
+> **Then** the index is created normally (no error, no no-op).
+
+### 4.8 Library Discovery
 
 #### discover_libraries(target)
 
@@ -122,12 +137,12 @@ Phase 1 targets:
 - **Coq standard library**: All `.vo` files from the installed Coq/Rocq stdlib.
 - **MathComp**: All `.vo` files from the installed MathComp package.
 
-### 4.8 Progress Reporting
+### 4.9 Progress Reporting
 
 - Pass 1: `"Extracting declarations [N/total]"` (per-declaration granularity)
 - Pass 2: `"Resolving dependencies [N/total]"` (per-declaration granularity)
 
-### 4.9 Backend Process Lifecycle
+### 4.10 Backend Process Lifecycle
 
 When the extraction backend (coq-lsp or SerAPI) crashes or becomes unresponsive:
 - Abort the indexing run
@@ -166,6 +181,7 @@ Error hierarchy:
 ```
 libraries = discover_libraries("stdlib+mathcomp")
 version = backend.detect_version()
+delete_if_exists("/path/to/index.db")
 writer = IndexWriter.create("/path/to/index.db")
 
 # Pass 1

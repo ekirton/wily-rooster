@@ -1,12 +1,16 @@
-"""CoqLspBackend — extraction backend using coqtop subprocess.
+"""CoqLspBackend — extraction backend using coq-lsp over LSP JSON-RPC.
 
-Communicates with ``coqtop -q`` over stdin/stdout to inspect compiled
-``.vo`` files and extract declaration data.
+Communicates with ``coq-lsp`` over stdin/stdout using the Language Server
+Protocol (Content-Length framed JSON-RPC).  Vernac commands are issued by
+opening synthetic ``.v`` documents; results come back as
+``textDocument/publishDiagnostics`` notifications.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -15,11 +19,6 @@ from typing import Any
 from wily_rooster.extraction.errors import BackendCrashError, ExtractionError
 
 logger = logging.getLogger(__name__)
-
-# Sentinel string appended after each command so we can reliably detect
-# where coqtop's response ends.
-_SENTINEL = "(*WILY_ROOSTER_SENTINEL*)"
-_SENTINEL_ECHO = "Error: Syntax error: illegal begin of vernac."
 
 # Regex for parsing ``Search`` output lines.
 # Each result looks like: ``name : type_signature``
@@ -36,47 +35,35 @@ _ASSUMPTION_RE = re.compile(r"^\s*(\S+)\s*:\s*(.+)$", re.MULTILINE)
 # Regex for the coqc version string.
 _VERSION_RE = re.compile(r"version\s+([\d.]+)")
 
-
-def _vo_to_logical_path(vo_path: Path) -> str:
-    """Derive a candidate logical path from a ``.vo`` file path.
-
-    This is a heuristic: it takes the stem parts after a ``theories`` or
-    ``user-contrib`` directory and joins them with dots.  For user
-    projects it falls back to the file stem.
-    """
-    parts = vo_path.parts
-    # Look for "theories" (stdlib) or "user-contrib" (opam packages)
-    for marker_idx, part in enumerate(parts):
-        if part == "theories":
-            relevant = parts[marker_idx + 1 :]
-            break
-        if part == "user-contrib":
-            relevant = parts[marker_idx + 1 :]
-            break
-    else:
-        # Fallback: use last two path components (package.Module)
-        relevant = parts[-2:] if len(parts) >= 2 else parts
-
-    # Strip the .vo extension from the last element
-    module_parts = [
-        p[: -len(".vo")] if p.endswith(".vo") else p for p in relevant
-    ]
-    return ".".join(module_parts)
+# Kind normalization map for About output.
+_KIND_MAP: dict[str, str] = {
+    "lemma": "lemma",
+    "theorem": "theorem",
+    "definition": "definition",
+    "inductive": "inductive",
+    "record": "record",
+    "class": "class",
+    "constructor": "constructor",
+    "instance": "instance",
+    "axiom": "axiom",
+    "parameter": "parameter",
+    "conjecture": "conjecture",
+    "coercion": "coercion",
+    "canonical structure": "canonical structure",
+    "notation": "notation",
+    "abbreviation": "abbreviation",
+    "section variable": "section variable",
+}
 
 
 class CoqLspBackend:
-    """Extraction backend that shells out to ``coqtop``.
-
-    Despite the name (kept for compatibility with the task plan), this
-    backend drives ``coqtop -q`` rather than coq-lsp, because coqtop
-    provides a simpler interface for the bulk-extraction commands we
-    need (``Search``, ``Print``, ``Check``, ``Print Assumptions``).
+    """Extraction backend that communicates with ``coq-lsp`` via LSP JSON-RPC.
 
     Lifecycle
     ---------
-    1. Call :meth:`start` to spawn the ``coqtop`` subprocess.
+    1. Call :meth:`start` to spawn ``coq-lsp`` and perform the LSP handshake.
     2. Use the query methods (:meth:`list_declarations`, etc.).
-    3. Call :meth:`stop` to terminate the subprocess.
+    3. Call :meth:`stop` to shut down the server gracefully.
 
     The class also works as a context manager::
 
@@ -84,40 +71,182 @@ class CoqLspBackend:
             decls = backend.list_declarations(vo_path)
     """
 
+    _next_id: int = 0
+    _next_uri_id: int = 0
+
     def __init__(self) -> None:
-        self._proc: subprocess.Popen[str] | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._server_info: dict[str, Any] = {}
+        self._notification_buffer: list[dict[str, Any]] = []
+        self._next_id = 0
+        self._next_uri_id = 0
+
+    # ------------------------------------------------------------------
+    # LSP message framing
+    # ------------------------------------------------------------------
+
+    def _write_message(self, msg: dict[str, Any]) -> None:
+        """Encode and write a JSON-RPC message with Content-Length header."""
+        body = json.dumps(msg).encode("utf-8")
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+        self._proc.stdin.write(header + body)  # type: ignore[union-attr]
+        self._proc.stdin.flush()  # type: ignore[union-attr]
+
+    def _read_message(self) -> dict[str, Any]:
+        """Read one Content-Length framed JSON-RPC message from stdout."""
+        stdout = self._proc.stdout  # type: ignore[union-attr]
+        headers: dict[str, str] = {}
+        while True:
+            line = stdout.readline()
+            if not line:
+                raise BackendCrashError(
+                    "coq-lsp closed stdout unexpectedly (process may have crashed)"
+                )
+            line_str = line.decode("ascii").rstrip("\r\n")
+            if not line_str:
+                break
+            if ":" in line_str:
+                key, val = line_str.split(":", 1)
+                headers[key.strip().lower()] = val.strip()
+
+        if "content-length" not in headers:
+            raise BackendCrashError(
+                "Missing Content-Length header from coq-lsp"
+            )
+
+        content_length = int(headers["content-length"])
+        body = stdout.read(content_length)
+        return json.loads(body)
+
+    # ------------------------------------------------------------------
+    # JSON-RPC request/notification helpers
+    # ------------------------------------------------------------------
+
+    def _send_request(
+        self, method: str, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Send a JSON-RPC request and wait for the matching response."""
+        self._next_id += 1
+        request_id = self._next_id
+        request: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params,
+        }
+        self._write_message(request)
+
+        while True:
+            msg = self._read_message()
+            if "id" in msg and msg["id"] == request_id:
+                if "error" in msg:
+                    raise ExtractionError(msg["error"]["message"])
+                return msg.get("result", {})
+            # Buffer notifications and other messages
+            self._notification_buffer.append(msg)
+
+    def _send_notification(
+        self, method: str, params: dict[str, Any]
+    ) -> None:
+        """Send a JSON-RPC notification (no id, no response expected)."""
+        notification: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        }
+        self._write_message(notification)
+
+    # ------------------------------------------------------------------
+    # Document lifecycle
+    # ------------------------------------------------------------------
+
+    def _open_document(self, uri: str, text: str) -> None:
+        """Send textDocument/didOpen notification."""
+        self._send_notification(
+            "textDocument/didOpen",
+            {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "coq",
+                    "version": 1,
+                    "text": text,
+                }
+            },
+        )
+
+    def _close_document(self, uri: str) -> None:
+        """Send textDocument/didClose notification."""
+        self._send_notification(
+            "textDocument/didClose",
+            {"textDocument": {"uri": uri}},
+        )
+
+    # ------------------------------------------------------------------
+    # Diagnostics
+    # ------------------------------------------------------------------
+
+    def _wait_for_diagnostics(self, uri: str) -> list[dict[str, Any]]:
+        """Read messages until publishDiagnostics arrives for *uri*."""
+        # Check buffer first
+        for i, msg in enumerate(self._notification_buffer):
+            if (
+                msg.get("method") == "textDocument/publishDiagnostics"
+                and msg["params"]["uri"] == uri
+            ):
+                self._notification_buffer.pop(i)
+                return msg["params"]["diagnostics"]
+
+        # Read from the wire
+        while True:
+            msg = self._read_message()
+            if (
+                msg.get("method") == "textDocument/publishDiagnostics"
+                and msg["params"]["uri"] == uri
+            ):
+                return msg["params"]["diagnostics"]
+            self._notification_buffer.append(msg)
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Spawn the ``coqtop`` subprocess."""
+        """Spawn ``coq-lsp`` and perform the LSP initialize handshake."""
         if self._proc is not None:
             return
         try:
             self._proc = subprocess.Popen(
-                ["coqtop", "-q"],
+                ["coq-lsp"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
             )
         except FileNotFoundError as exc:
             raise ExtractionError(
-                f"coqtop not found on PATH: {exc}"
+                f"coq-lsp not found on PATH: {exc}"
             ) from exc
-        # Read any initial banner/prompt that coqtop might emit
-        self._read_until_prompt()
+
+        # LSP initialize request
+        result = self._send_request(
+            "initialize",
+            {
+                "processId": os.getpid(),
+                "rootUri": None,
+                "capabilities": {},
+            },
+        )
+        self._server_info = result.get("serverInfo", {})
+
+        # LSP initialized notification
+        self._send_notification("initialized", {})
 
     def stop(self) -> None:
-        """Terminate the ``coqtop`` subprocess gracefully."""
+        """Shut down ``coq-lsp`` with the LSP shutdown/exit sequence."""
         if self._proc is None:
             return
         try:
-            if self._proc.stdin:
-                self._proc.stdin.write("Quit.\n")
-                self._proc.stdin.flush()
+            self._send_request("shutdown", {})
+            self._send_notification("exit", {})
             self._proc.wait(timeout=5)
         except Exception:
             self._proc.kill()
@@ -133,11 +262,135 @@ class CoqLspBackend:
         self.stop()
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_alive(self) -> None:
+        """Raise if the subprocess is not running."""
+        if self._proc is None:
+            raise ExtractionError("CoqLspBackend has not been started")
+        if self._proc.poll() is not None:
+            exit_code = self._proc.returncode
+            stderr = ""
+            if self._proc.stderr:
+                try:
+                    raw = self._proc.stderr.read()
+                    stderr = (
+                        raw.decode("utf-8", errors="replace")
+                        if isinstance(raw, bytes)
+                        else raw
+                    )
+                except Exception:
+                    pass
+            self._proc = None
+            raise BackendCrashError(
+                f"coq-lsp exited unexpectedly (exit code {exit_code}). "
+                f"stderr: {stderr!r}"
+            )
+
+    def _next_uri(self) -> str:
+        """Generate a unique URI for a synthetic query document."""
+        uri = f"file:///tmp/wily_query_{self._next_uri_id}.v"
+        self._next_uri_id += 1
+        return uri
+
+    def _run_vernac_query(self, text: str) -> list[dict[str, Any]]:
+        """Open a synthetic document, wait for diagnostics, close it."""
+        uri = self._next_uri()
+        self._open_document(uri, text)
+        diags = self._wait_for_diagnostics(uri)
+        self._close_document(uri)
+        return diags
+
+    def _get_declaration_kind(self, name: str) -> str:
+        """Use ``About`` to determine the kind of a declaration."""
+        diags = self._run_vernac_query(f"About {name}.")
+        all_text = "\n".join(
+            d["message"] for d in diags if d.get("severity", 3) != 1
+        )
+        match = _ABOUT_KIND_RE.search(all_text)
+        if match:
+            raw_kind = match.group(2).strip().lower()
+            for key, value in _KIND_MAP.items():
+                if key in raw_kind:
+                    return value
+            logger.warning(
+                "Unknown declaration kind for %s: %r", name, raw_kind
+            )
+            return raw_kind
+        logger.warning(
+            "Could not determine kind for %s from About output", name
+        )
+        return "definition"
+
+    # ------------------------------------------------------------------
+    # Module path derivation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _vo_to_logical_path(vo_path: Path) -> str:
+        """Derive a candidate logical path from a ``.vo`` file path.
+
+        This is a heuristic: it takes the stem parts after a ``theories`` or
+        ``user-contrib`` directory and joins them with dots.  For user
+        projects it falls back to the file stem.
+        """
+        parts = vo_path.parts
+        for marker_idx, part in enumerate(parts):
+            if part == "theories":
+                relevant = parts[marker_idx + 1 :]
+                break
+            if part == "user-contrib":
+                relevant = parts[marker_idx + 1 :]
+                break
+        else:
+            relevant = parts[-2:] if len(parts) >= 2 else parts
+
+        module_parts = [
+            p[: -len(".vo")] if p.endswith(".vo") else p for p in relevant
+        ]
+        return ".".join(module_parts)
+
+    # ------------------------------------------------------------------
+    # Search diagnostics parsing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_search_diagnostics(
+        diags: list[dict[str, Any]],
+    ) -> list[tuple[str, str]]:
+        """Extract ``(name, type_sig)`` pairs from Search diagnostic output.
+
+        Skips error diagnostics (severity 1).
+        """
+        results: list[tuple[str, str]] = []
+        for d in diags:
+            if d.get("severity") == 1:
+                continue
+            msg = d["message"]
+            match = _SEARCH_LINE_RE.match(msg)
+            if match:
+                results.append((match.group(1), match.group(2)))
+        return results
+
+    # ------------------------------------------------------------------
     # Backend protocol
     # ------------------------------------------------------------------
 
     def detect_version(self) -> str:
-        """Return the Coq version string (e.g. ``"8.19.0"``)."""
+        """Return the Coq version string (e.g. ``"9.1.1"``)."""
+        # Try extracting from serverInfo (e.g. "0.2.2+9.1.1")
+        version_str = self._server_info.get("version", "")
+        if "+" in version_str:
+            coq_version = version_str.split("+", 1)[1]
+            if re.match(r"\d+\.\d+", coq_version):
+                return coq_version
+
+        match = _VERSION_RE.search(version_str)
+        if match:
+            return match.group(1)
+
+        # Fallback: coqc --version
         try:
             result = subprocess.run(
                 ["coqc", "--version"],
@@ -158,8 +411,11 @@ class CoqLspBackend:
         if match:
             return match.group(1)
 
-        # Fallback: return the raw first line stripped
-        first_line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+        first_line = (
+            result.stdout.strip().splitlines()[0]
+            if result.stdout.strip()
+            else ""
+        )
         if first_line:
             return first_line
         raise ExtractionError(
@@ -171,207 +427,75 @@ class CoqLspBackend:
     ) -> list[tuple[str, str, Any]]:
         """List declarations from a compiled ``.vo`` file.
 
-        Returns a list of ``(name, kind, constr_t)`` tuples.  The
-        ``constr_t`` value is a placeholder dict with available metadata
-        since ``coqtop`` does not expose raw ``Constr.t`` terms.
+        Returns a list of ``(name, kind, constr_t)`` tuples.
         """
         self._ensure_alive()
 
-        logical_path = _vo_to_logical_path(vo_path)
-        parent_dir = str(vo_path.parent)
+        logical_path = self._vo_to_logical_path(vo_path)
+        text = (
+            f"Require Import {logical_path}.\n"
+            f"Search _ inside {logical_path}."
+        )
+        diags = self._run_vernac_query(text)
 
-        # Add the directory to the load path so Require can find the .vo
-        self._send_command(f'Add LoadPath "{parent_dir}" as {logical_path.rsplit(".", 1)[0] if "." in logical_path else logical_path}.')
-
-        # Require the module
-        require_resp = self._send_command(f"Require Import {logical_path}.")
-        if "Error" in require_resp:
-            logger.warning(
-                "Failed to Require Import %s: %s", logical_path, require_resp
-            )
+        # If there are error diagnostics, the Require likely failed
+        if any(d.get("severity") == 1 for d in diags):
             return []
 
-        # Search for all declarations inside the module
-        search_resp = self._send_command(f"Search _ inside {logical_path}.")
+        search_results = self._parse_search_diagnostics(diags)
+        if not search_results:
+            return []
 
         declarations: list[tuple[str, str, Any]] = []
-        for line in search_resp.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            match = _SEARCH_LINE_RE.match(line)
-            if match:
-                name = match.group(1)
-                type_sig = match.group(2)
-                # Determine the kind via About
-                kind = self._get_declaration_kind(name)
-                constr_t: dict[str, Any] = {
-                    "name": name,
-                    "type_signature": type_sig,
-                    "source": "coqtop",
-                }
-                declarations.append((name, kind, constr_t))
+        for name, type_sig in search_results:
+            kind = self._get_declaration_kind(name)
+            constr_t: dict[str, Any] = {
+                "name": name,
+                "type_signature": type_sig,
+                "source": "coq-lsp",
+            }
+            declarations.append((name, kind, constr_t))
 
         return declarations
 
     def pretty_print(self, name: str) -> str:
         """Return the human-readable statement of a declaration."""
         self._ensure_alive()
-        response = self._send_command(f"Print {name}.")
-        if "Error" in response:
-            raise ExtractionError(
-                f"pretty_print failed for {name!r}: {response}"
-            )
-        return response.strip()
+        diags = self._run_vernac_query(f"Print {name}.")
+        messages = [
+            d["message"] for d in diags if d.get("severity", 3) != 1
+        ]
+        return "\n".join(messages).strip()
 
     def pretty_print_type(self, name: str) -> str | None:
         """Return the type signature of a declaration, or ``None``."""
         self._ensure_alive()
-        response = self._send_command(f"Check {name}.")
-        if "Error" in response:
-            logger.warning("pretty_print_type failed for %s: %s", name, response)
+        diags = self._run_vernac_query(f"Check {name}.")
+        if any(d.get("severity") == 1 for d in diags):
+            logger.warning("pretty_print_type failed for %s", name)
             return None
-        return response.strip() or None
+        messages = [
+            d["message"] for d in diags if d.get("severity", 3) != 1
+        ]
+        if not messages:
+            return None
+        return "\n".join(messages).strip() or None
 
     def get_dependencies(
         self, name: str
     ) -> list[tuple[str, str]]:
         """Return dependency pairs ``(target_name, relation)``."""
         self._ensure_alive()
-        response = self._send_command(f"Print Assumptions {name}.")
+        diags = self._run_vernac_query(f"Print Assumptions {name}.")
+        all_text = "\n".join(
+            d["message"] for d in diags if d.get("severity", 3) != 1
+        )
 
-        if "Closed under the global context" in response:
+        if "Closed under the global context" in all_text:
             return []
 
         deps: list[tuple[str, str]] = []
-        for match in _ASSUMPTION_RE.finditer(response):
+        for match in _ASSUMPTION_RE.finditer(all_text):
             dep_name = match.group(1)
             deps.append((dep_name, "assumes"))
-
         return deps
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _ensure_alive(self) -> None:
-        """Raise if the subprocess is not running."""
-        if self._proc is None:
-            raise ExtractionError("CoqLspBackend has not been started")
-        if self._proc.poll() is not None:
-            exit_code = self._proc.returncode
-            stderr = ""
-            if self._proc.stderr:
-                try:
-                    stderr = self._proc.stderr.read()
-                except Exception:
-                    pass
-            self._proc = None
-            raise BackendCrashError(
-                f"coqtop exited unexpectedly (exit code {exit_code}). "
-                f"stderr: {stderr!r}"
-            )
-
-    def _send_command(self, command: str) -> str:
-        """Send a vernacular command to coqtop and return the response.
-
-        We append a deliberately malformed comment after the real command
-        so that coqtop emits a known error string, which we use as a
-        delimiter to know when the response is complete.
-        """
-        assert self._proc is not None
-        assert self._proc.stdin is not None
-        assert self._proc.stdout is not None
-
-        # Send the real command followed by the sentinel
-        try:
-            self._proc.stdin.write(command + "\n")
-            self._proc.stdin.write(_SENTINEL + "\n")
-            self._proc.stdin.flush()
-        except (BrokenPipeError, OSError) as exc:
-            raise BackendCrashError(
-                f"Failed to write to coqtop stdin: {exc}"
-            ) from exc
-
-        return self._read_until_sentinel()
-
-    def _read_until_sentinel(self) -> str:
-        """Read coqtop stdout until the sentinel error appears."""
-        assert self._proc is not None
-        assert self._proc.stdout is not None
-
-        lines: list[str] = []
-        while True:
-            try:
-                line = self._proc.stdout.readline()
-            except Exception as exc:
-                raise BackendCrashError(
-                    f"Failed to read from coqtop stdout: {exc}"
-                ) from exc
-
-            if not line:
-                # EOF — process likely died
-                raise BackendCrashError(
-                    "coqtop closed stdout unexpectedly (process may have crashed)"
-                )
-
-            # The sentinel produces a known error — stop when we see it
-            if _SENTINEL_ECHO in line or _SENTINEL in line:
-                break
-            lines.append(line)
-
-        return "".join(lines)
-
-    def _read_until_prompt(self) -> str:
-        """Read any initial output from coqtop (banner, etc.).
-
-        Since coqtop -q suppresses the banner, this typically returns
-        quickly.  We send a no-op sentinel to flush the stream.
-        """
-        if self._proc is None:
-            return ""
-        assert self._proc.stdin is not None
-        assert self._proc.stdout is not None
-
-        try:
-            self._proc.stdin.write(_SENTINEL + "\n")
-            self._proc.stdin.flush()
-        except (BrokenPipeError, OSError):
-            return ""
-
-        return self._read_until_sentinel()
-
-    def _get_declaration_kind(self, name: str) -> str:
-        """Use ``About`` to determine the kind of a declaration."""
-        response = self._send_command(f"About {name}.")
-        match = _ABOUT_KIND_RE.search(response)
-        if match:
-            raw_kind = match.group(2).strip().lower()
-            # Normalize common About output to kind_mapping keys
-            kind_map: dict[str, str] = {
-                "lemma": "lemma",
-                "theorem": "theorem",
-                "definition": "definition",
-                "inductive": "inductive",
-                "record": "record",
-                "class": "class",
-                "constructor": "constructor",
-                "instance": "instance",
-                "axiom": "axiom",
-                "parameter": "parameter",
-                "conjecture": "conjecture",
-                "coercion": "coercion",
-                "canonical structure": "canonical structure",
-                "notation": "notation",
-                "abbreviation": "abbreviation",
-                "section variable": "section variable",
-            }
-            for key, value in kind_map.items():
-                if key in raw_kind:
-                    return value
-            logger.warning(
-                "Unknown declaration kind for %s: %r", name, raw_kind
-            )
-            return raw_kind
-        logger.warning("Could not determine kind for %s from About output", name)
-        return "definition"  # conservative fallback

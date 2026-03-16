@@ -16,6 +16,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["test"]
 asyncio_mode = "auto"
+markers = [
+    "requires_coq: test requires a real Coq/coq-lsp installation",
+]
 
 [build-system]
 requires = ["hatchling"]

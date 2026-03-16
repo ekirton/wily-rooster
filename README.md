@@ -31,8 +31,8 @@ Install [opam](https://opam.ocaml.org/) (OCaml's package manager), then use it t
 brew install opam hg darcs
 opam init
 
-# Install Coq
-opam install coq
+# Install Coq and the extraction backend
+opam install coq coq-lsp
 
 # Add the Coq package repository (required for MathComp)
 opam repo add coq-released https://coq.inria.fr/opam/released

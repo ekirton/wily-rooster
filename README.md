@@ -91,7 +91,7 @@ uv sync --group dev
 Build the search index from your installed Coq standard library and MathComp:
 
 ```bash
-uv run python -m wily_rooster.extraction --target stdlib+mathcomp --db index.db
+uv run python -m wily_rooster.extraction --target stdlib+mathcomp --db index.db --progress
 ```
 
 This runs the offline extraction pipeline:

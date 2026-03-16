@@ -104,9 +104,11 @@ Extraction of individual declarations may fail (e.g., unsupported term construct
 
 ## Progress Reporting
 
-Both extraction passes report progress:
-- Pass 1: "Extracting declarations [N/total]" (per-declaration granularity)
-- Pass 2: "Resolving dependencies [N/total]" (per-declaration granularity)
+Progress reporting is opt-in: the indexing command is quiet by default and prints progress messages only when the caller enables a progress flag. When enabled, messages are written to stderr so they do not interfere with structured output.
+
+Both extraction passes report progress at per-declaration granularity, and each message identifies the current stage:
+- Pass 1: "Extracting declarations [N/total]"
+- Pass 2: "Resolving dependencies [N/total]"
 
 ## Index Construction
 

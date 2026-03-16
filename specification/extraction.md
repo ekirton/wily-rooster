@@ -186,8 +186,14 @@ Phase 1 targets:
 
 ### 4.9 Progress Reporting
 
-- Pass 1: `"Extracting declarations [N/total]"` (per-declaration granularity)
-- Pass 2: `"Resolving dependencies [N/total]"` (per-declaration granularity)
+- REQUIRES: The caller has enabled the progress flag.
+- ENSURES: When enabled, the extraction pipeline writes progress messages to stderr for each processing stage. When disabled (the default), no progress messages are emitted.
+
+Per-stage message format (per-declaration granularity):
+- Pass 1: `"Extracting declarations [N/total]"`
+- Pass 2: `"Resolving dependencies [N/total]"`
+
+Each message identifies the current stage name. Messages are written to stderr so they do not interfere with structured output on stdout.
 
 ### 4.10 Backend Process Lifecycle
 

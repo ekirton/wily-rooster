@@ -63,7 +63,22 @@ Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
 - GIVEN no existing index database at the output path WHEN the indexing command is run THEN the new index is created normally
 - GIVEN an existing index database WHEN the indexing command deletes it THEN no confirmation prompt is displayed to the user
 
-### 1.5 Detect and Rebuild Stale Indexes
+### 1.5 CLI Progress Reporting
+
+**As a** Coq developer running the indexing command from the terminal,
+**I want to** optionally see progress messages during each stage of the index job,
+**so that** I can monitor long-running indexing operations and know the tool has not stalled.
+
+**Priority:** P1
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN the indexing command is running WHEN a progress flag is enabled THEN the command prints progress messages to stderr for each processing stage
+- GIVEN progress reporting is enabled WHEN a stage is in progress THEN messages include an indication of completion such as percent complete or records processed out of total
+- GIVEN progress reporting is enabled WHEN the indexing command transitions between stages THEN the stage name is included in the progress output
+- GIVEN the indexing command is running WHEN no progress flag is provided THEN no progress messages are printed (quiet by default)
+
+### 1.6 Detect and Rebuild Stale Indexes
 
 **As a** Coq developer who has updated an indexed library,
 **I want** the system to detect the update and rebuild the index immediately,
@@ -77,7 +92,7 @@ Derived from [doc/requirements/coq-ecosystem-gaps.md](../coq-ecosystem-gaps.md).
 - GIVEN a detected library version change WHEN the MCP server receives a query THEN the index is rebuilt before returning results
 - GIVEN a stale index is detected WHEN the rebuild completes THEN the new index replaces the old one atomically
 
-### 1.6 Index Version Compatibility
+### 1.7 Index Version Compatibility
 
 **As a** Coq developer who has updated the search tool,
 **I want** the system to reject incompatible indexes and re-index from scratch,

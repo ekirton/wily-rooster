@@ -186,15 +186,25 @@ class CoqLspBackend:
     # ------------------------------------------------------------------
 
     def _wait_for_diagnostics(self, uri: str) -> list[dict[str, Any]]:
-        """Read messages until publishDiagnostics arrives for *uri*."""
+        """Read messages until a non-empty publishDiagnostics arrives for *uri*.
+
+        coq-lsp sends an initial empty publishDiagnostics when a document is
+        opened (clearing previous state), followed by the real results after
+        checking completes.  We skip empty notifications to avoid returning
+        0 results for every module.
+        """
         # Check buffer first
-        for i, msg in enumerate(self._notification_buffer):
+        remaining: list[dict[str, Any]] = []
+        for msg in self._notification_buffer:
             if (
                 msg.get("method") == "textDocument/publishDiagnostics"
                 and msg["params"]["uri"] == uri
+                and msg["params"]["diagnostics"]
             ):
-                self._notification_buffer.pop(i)
+                self._notification_buffer = remaining
                 return msg["params"]["diagnostics"]
+            remaining.append(msg)
+        self._notification_buffer = remaining
 
         # Read from the wire
         while True:
@@ -203,7 +213,10 @@ class CoqLspBackend:
                 msg.get("method") == "textDocument/publishDiagnostics"
                 and msg["params"]["uri"] == uri
             ):
-                return msg["params"]["diagnostics"]
+                if msg["params"]["diagnostics"]:
+                    return msg["params"]["diagnostics"]
+                # Skip empty diagnostics notification
+                continue
             self._notification_buffer.append(msg)
 
     # ------------------------------------------------------------------
@@ -342,6 +355,11 @@ class CoqLspBackend:
                 break
             if part == "user-contrib":
                 relevant = parts[marker_idx + 1 :]
+                # Rocq 9.x stdlib lives at user-contrib/Stdlib/. The logical
+                # path for Search must omit the "Stdlib" prefix — e.g.
+                # user-contrib/Stdlib/Init/Nat.vo → Init.Nat, not Stdlib.Init.Nat.
+                if relevant and relevant[0] == "Stdlib":
+                    relevant = relevant[1:]
                 break
         else:
             relevant = parts[-2:] if len(parts) >= 2 else parts

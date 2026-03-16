@@ -260,17 +260,24 @@ def discover_libraries(target: str) -> list[Path]:
     base_dir = Path(result.stdout.strip())
 
     if target == "stdlib":
-        search_dir = base_dir / "theories"
+        # Rocq 9.x moved the stdlib from theories/ to user-contrib/Stdlib/.
+        # Search both locations and use whichever yields more .vo files,
+        # since the legacy theories/ may contain only a small subset.
+        theories_dir = base_dir / "theories"
+        user_contrib_dir = base_dir / "user-contrib" / "Stdlib"
+        theories_vos = sorted(theories_dir.rglob("*.vo")) if theories_dir.is_dir() else []
+        contrib_vos = sorted(user_contrib_dir.rglob("*.vo")) if user_contrib_dir.is_dir() else []
+        vo_files = contrib_vos if len(contrib_vos) > len(theories_vos) else theories_vos
     elif target == "mathcomp":
         search_dir = base_dir / "user-contrib" / "mathcomp"
+        vo_files = sorted(search_dir.rglob("*.vo"))
     else:
         search_dir = Path(target)
-
-    vo_files = sorted(search_dir.rglob("*.vo"))
+        vo_files = sorted(search_dir.rglob("*.vo"))
 
     if not vo_files:
         raise ExtractionError(
-            f"No .vo files found for target '{target}' in {search_dir}"
+            f"No .vo files found for target '{target}' in {base_dir}"
         )
 
     return vo_files

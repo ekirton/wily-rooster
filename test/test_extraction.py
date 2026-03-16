@@ -173,6 +173,48 @@ class TestDiscoverLibraries:
             with pytest.raises(ExtractionError):
                 discover_libraries("stdlib")
 
+    def test_stdlib_finds_rocq9_user_contrib_stdlib(self, tmp_path):
+        """Rocq 9.x moved stdlib from theories/ to user-contrib/Stdlib/.
+
+        The spec (§4.7) says discover_libraries("stdlib") must return ALL
+        .vo files from the installed Coq/Rocq stdlib.  When the stdlib
+        lives at user-contrib/Stdlib/ (Rocq 9.x), the function must look
+        there — not only in theories/ which contains a small legacy subset.
+        """
+        from wily_rooster.extraction.pipeline import discover_libraries
+
+        # Simulate Rocq 9.x layout: most stdlib is under user-contrib/Stdlib
+        theories = tmp_path / "theories"
+        theories.mkdir()
+        (theories / "Init").mkdir()
+        # Legacy subset: only 2 .vo files in theories/
+        (theories / "Init" / "Nat.vo").touch()
+        (theories / "Init" / "Logic.vo").touch()
+
+        user_contrib = tmp_path / "user-contrib" / "Stdlib"
+        user_contrib.mkdir(parents=True)
+        (user_contrib / "Init").mkdir()
+        (user_contrib / "Arith").mkdir()
+        (user_contrib / "Lists").mkdir()
+        # Full stdlib: 5 .vo files under user-contrib/Stdlib
+        (user_contrib / "Init" / "Nat.vo").touch()
+        (user_contrib / "Init" / "Logic.vo").touch()
+        (user_contrib / "Init" / "Datatypes.vo").touch()
+        (user_contrib / "Arith" / "PeanoNat.vo").touch()
+        (user_contrib / "Lists" / "List.vo").touch()
+
+        with patch("wily_rooster.extraction.pipeline.subprocess") as mock_sub:
+            mock_sub.run.return_value = Mock(
+                returncode=0, stdout=str(tmp_path) + "\n"
+            )
+            result = discover_libraries("stdlib")
+
+        # Must find the full stdlib, not just the legacy theories/ subset
+        assert len(result) >= 5, (
+            f"discover_libraries('stdlib') found only {len(result)} .vo files; "
+            "expected >= 5 from user-contrib/Stdlib/ (Rocq 9.x stdlib location)"
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 3. Pass 1 — Per-Declaration Processing

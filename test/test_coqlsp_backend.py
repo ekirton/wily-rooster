@@ -509,6 +509,36 @@ class TestWaitForDiagnostics:
         assert len(result) == 1
         assert result[0]["message"] == "result"
 
+    def test_skips_initial_empty_diagnostics(self):
+        """coq-lsp sends an initial empty publishDiagnostics before the real
+        results arrive.  _wait_for_diagnostics must skip the empty notification
+        and return the first one with actual content.
+
+        This mirrors real coq-lsp behavior: opening a document triggers a
+        sequence like [empty diagnostics, fileProgress..., real diagnostics].
+        Returning the empty first notification causes list_declarations() to
+        see 0 results for every module.
+        """
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        uri = "file:///tmp/wily_query_0.v"
+        # First notification: empty diagnostics (clearing previous state)
+        empty_notif = _make_diagnostics_notification(uri, [])
+        # Second notification: actual results after document is fully checked
+        real_diag = _make_diagnostic("Nat.add : nat -> nat -> nat", severity=3)
+        real_notif = _make_diagnostics_notification(uri, [real_diag])
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        raw = _encode_lsp(empty_notif) + _encode_lsp(real_notif)
+        backend._proc = Mock()
+        backend._proc.stdout = io.BytesIO(raw)
+        backend._proc.poll.return_value = None
+        backend._notification_buffer = []
+
+        result = backend._wait_for_diagnostics(uri)
+        assert len(result) == 1
+        assert result[0]["message"] == "Nat.add : nat -> nat -> nat"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 6. list_declarations
@@ -957,6 +987,25 @@ class TestVoToLogicalPath:
         result = CoqLspBackend._vo_to_logical_path(path)
         assert result == "Arith.PeanoNat"
 
+    def test_rocq9_stdlib_under_user_contrib(self):
+        """Rocq 9.x moved the stdlib from theories/ to user-contrib/Stdlib/.
+
+        For a path like user-contrib/Stdlib/Init/Nat.vo the heuristic
+        produces 'Stdlib.Init.Nat', but this path does NOT work with
+        'Search _ inside Stdlib.Init.Nat.' in Rocq 9.x — the correct
+        logical path for Search is 'Init.Nat' (without the Stdlib prefix).
+        """
+        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        path = Path(
+            "/home/user/.opam/default/lib/coq/user-contrib/Stdlib/Init/Nat.vo"
+        )
+        result = CoqLspBackend._vo_to_logical_path(path)
+        # The logical path must work with 'Require Import X. Search _ inside X.'
+        # In Rocq 9.x, 'Search _ inside Stdlib.Init.Nat.' returns no results,
+        # while 'Search _ inside Init.Nat.' works correctly.
+        assert result == "Init.Nat"
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 12. Error Handling
@@ -1135,30 +1184,50 @@ class TestProtocolConformance:
 
 @pytest.mark.requires_coq
 class TestContractListDeclarations:
-    """Contract: real coq-lsp returns valid declarations for a .vo file."""
+    """Contract: real coq-lsp returns valid declarations for a .vo file.
+
+    Verifies that the mock assumptions in TestListDeclarations hold against
+    a real coq-lsp installation.  The spec (§4.1) requires list_declarations
+    to return (name, kind, constr_t) tuples for ALL declarations in a module.
+    """
 
     def test_real_backend_list_declarations(self):
         import subprocess
 
         from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
 
-        # Find a stdlib .vo file
+        # Find a stdlib .vo file known to contain declarations.
+        # Rocq 9.x moved stdlib from theories/ to user-contrib/Stdlib/.
         result = subprocess.run(
             ["coqc", "-where"], capture_output=True, text=True
         )
         coq_root = Path(result.stdout.strip())
-        vo_file = next((coq_root / "theories" / "Init").glob("*.vo"), None)
+
+        # Try Rocq 9.x location first, then legacy theories/
+        for search_dir in [
+            coq_root / "user-contrib" / "Stdlib" / "Init",
+            coq_root / "theories" / "Init",
+        ]:
+            vo_file = next(search_dir.glob("*.vo"), None)
+            if vo_file is not None:
+                break
         if vo_file is None:
-            pytest.skip("No .vo files found in Coq stdlib")
+            pytest.skip("No .vo files found in Coq/Rocq stdlib")
 
         with CoqLspBackend() as backend:
             decls = backend.list_declarations(vo_file)
 
         assert isinstance(decls, list)
-        if decls:
-            assert all(len(d) == 3 for d in decls)
-            assert all(isinstance(d[0], str) for d in decls)
-            assert all(isinstance(d[1], str) for d in decls)
+        # The Init/ directory contains non-trivial modules (Nat, Logic, etc.)
+        # that define dozens of declarations.  An empty list means the backend
+        # failed to extract them — exactly the bug we are catching.
+        assert len(decls) > 0, (
+            f"list_declarations returned 0 declarations for {vo_file.name}; "
+            "expected non-empty for a known stdlib module"
+        )
+        assert all(len(d) == 3 for d in decls)
+        assert all(isinstance(d[0], str) for d in decls)
+        assert all(isinstance(d[1], str) for d in decls)
 
 
 @pytest.mark.requires_coq
@@ -1177,16 +1246,35 @@ class TestContractDetectVersion:
 
 @pytest.mark.requires_coq
 class TestContractPrettyPrint:
-    """Contract: real coq-lsp pretty-prints a known declaration."""
+    """Contract: real coq-lsp pretty-prints a known declaration.
+
+    Verifies that pretty_print returns the actual definition body, not just
+    any non-empty string (e.g. a deprecation warning).
+    """
 
     def test_real_backend_pretty_print(self):
         from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
 
+        # Use the short name 'Nat.add' which works in both Coq 8.x and Rocq 9.x.
+        # 'Coq.Init.Nat.add' produces only a deprecation warning in Rocq 9.x,
+        # not the actual definition — that was masking the real failure.
         with CoqLspBackend() as backend:
-            result = backend.pretty_print("Coq.Init.Nat.add")
+            result = backend.pretty_print("Nat.add")
 
         assert isinstance(result, str)
-        assert len(result) > 0
+        assert len(result) > 0, (
+            "pretty_print returned empty string for Nat.add; "
+            "expected the definition body"
+        )
+        # The Print output for Nat.add must contain its definition structure
+        # (e.g. 'fix', 'match', 'nat', or 'Nat.add =').
+        assert any(
+            keyword in result
+            for keyword in ("fix", "match", "nat", "Nat.add", "add")
+        ), (
+            f"pretty_print output does not look like the Nat.add definition: "
+            f"{result!r}"
+        )
 
 
 @pytest.mark.requires_coq
@@ -1196,8 +1284,9 @@ class TestContractGetDependencies:
     def test_real_backend_get_dependencies(self):
         from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
 
+        # Use short name for Rocq 9.x compatibility
         with CoqLspBackend() as backend:
-            deps = backend.get_dependencies("Coq.Init.Nat.add")
+            deps = backend.get_dependencies("Nat.add")
 
         assert isinstance(deps, list)
         assert all(

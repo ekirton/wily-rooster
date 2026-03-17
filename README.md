@@ -1,4 +1,6 @@
-# Poule
+# Poule (Hen)
+
+*Utilities for Coq (Rooster)*
 
 Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
 

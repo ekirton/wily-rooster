@@ -8,66 +8,57 @@ The system has four major subsystems — semantic search (Phase 1), proof intera
 
 ## Component Diagram
 
-```
-┌─────────────────────────┐   ┌──────────────────────────────────┐
-│       Claude Code       │   │         Terminal user             │
-│                         │   │                                    │
-│  Formulates MCP tool    │   │  CLI subcommands                   │
-│  calls, filters and     │   │                                    │
-│  explains results       │   │                                    │
-└───────────┬─────────────┘   └──────────┬──────────────┬──────────┘
-            │ MCP tool calls (stdio)      │ CLI           │ CLI
-            ▼                             ▼               ▼
-┌────────────────────────────────┐  ┌────────────┐  ┌──────────────────────┐
-│    MCP Server (thin adapter)   │  │    CLI     │  │   CLI (Phase 3)      │
-│                                │  │            │  │                      │
-│  Search tools (Phase 1):      │  │  index     │  │  extract             │
-│    search_by_name, ...         │  │  search-*  │  │  extract-deps        │
-│                                │  │  get-lemma │  │  quality-report      │
-│  Proof tools (Phase 2):       │  │  replay-   │  │                      │
-│    open_proof_session, ...     │  │   proof    │  │                      │
-│                                │  │            │  │                      │
-│  Proof search tools (Phase 4):│  │            │  │                      │
-│    proof_search, fill_admits   │  │            │  │                      │
-└──┬──────────┬───────┬─────────┘  └─────┬──────┘  └──────────┬───────────┘
-   │ search   │ sess  │ proof search     │ search          │ batch
-   │ queries  │ ops   │                  │ queries         │ extraction
-   ▼          ▼       ▼                  ▼                 ▼
-┌──────────┐ ┌──────────────┐ ┌────────────────┐  ┌─────────────────────┐
-│ Retrieval│ │Proof Session │ │ Proof Search   │  │ Extraction Campaign │
-│ Pipeline │ │  Manager     │ │   Engine       │  │   Orchestrator      │
-│          │ │              │ │                │  │                     │
-│ Channels:│ │ Session      │ │ Best-first     │  │ Campaign Planner    │
-│ WL, MePo,│ │  Registry    │ │  search loop   │  │ Per-proof Loop      │
-│ FTS5,TED,│ │              │ │ Candidate Gen  │  │ Output Writer       │
-│ Const    │ │ Per-session: │ │  (LLM+solver)  │  │ Checkpoint Mgr (P1) │
-│ Jaccard  │ │  CoqBackend  │ │ State Cache    │  │                     │
-│          │ │  State hist. │ │ Diversity Filt │  └──────────┬──────────┘
-│ Fusion:  │ │  Premise ext.│ │                │             │ session
-│ RRF      │ │              │ └───┬─────┬──────┘             │ ops (reuse)
-└────┬─────┘ └──────┬───────┘     │     │                    │
-     │ SQL          │ coq-lsp/    │     │                    │
-     │ queries      │  SerAPI     │     │                    │
-     ▼              ▼             │     │                    │
-┌──────────┐ ┌────────────────┐  │     │                    │
-│ Storage  │ │ Coq Backend    │◄─┘     │                    │
-│ (SQLite) │ │  Processes     │  tactic│                    │
-│          │ │ (one per sess.)│  verify│                    │
-│ decls    │ │                │        │                    │
-│ deps     │ │ Load .v files  │        │ premise            │
-│ wl_vecs  │ │ Execute tactics│        │ retrieval          │
-│ sym_freq │ │ Report state   │        │ (optional)         │
-│ idx_meta │ └────────────────┘        │                    │
-└────┬─────┘◄──────────────────────────┘                    │
-     ▲                                                      │
-     │ writes during indexing                                │
-┌────┴──────────┐                                           │
-│ Coq Library   │    Fill Admits Orchestrator ◄──────────────┘
-│  Extraction   │      ├─ search → Proof Search Engine
-│               │      └─ sessions → Proof Session Manager
-│ Via coq-lsp   │
-│  or SerAPI    │    JSON Lines output (Phase 3)    Training Data
-└───────────────┘    (.jsonl files)                 (opt. few-shot)
+```mermaid
+graph TD
+    subgraph Clients
+        CC["Claude Code<br/><i>Formulates MCP tool calls,<br/>filters and explains results</i>"]
+        TU["Terminal User<br/><i>CLI subcommands</i>"]
+    end
+
+    subgraph "Entry Points"
+        MCP["MCP Server (thin adapter)<br/><br/>Search tools (Phase 1):<br/>&nbsp; search_by_name, ...<br/><br/>Proof tools (Phase 2):<br/>&nbsp; open_proof_session, ...<br/><br/>Proof search tools (Phase 4):<br/>&nbsp; proof_search, fill_admits"]
+        CLI["CLI<br/><br/>index<br/>search-*<br/>get-lemma<br/>replay-proof"]
+        CLI3["CLI (Phase 3)<br/><br/>extract<br/>extract-deps<br/>quality-report"]
+    end
+
+    CC -- "MCP tool calls (stdio)" --> MCP
+    TU -- CLI --> CLI
+    TU -- CLI --> CLI3
+
+    subgraph "Core Services"
+        RP["Retrieval Pipeline<br/><br/>Channels:<br/>WL, MePo, FTS5, TED,<br/>Const, Jaccard<br/><br/>Fusion: RRF"]
+        PSM["Proof Session Manager<br/><br/>Session Registry<br/><br/>Per-session:<br/>&nbsp; CoqBackend<br/>&nbsp; State hist.<br/>&nbsp; Premise ext."]
+        PSE["Proof Search Engine<br/><br/>Best-first search loop<br/>Candidate Gen (LLM+solver)<br/>State Cache<br/>Diversity Filter"]
+        ECO["Extraction Campaign<br/>Orchestrator<br/><br/>Campaign Planner<br/>Per-proof Loop<br/>Output Writer<br/>Checkpoint Mgr (P1)"]
+    end
+
+    MCP -- "search queries" --> RP
+    MCP -- "session ops" --> PSM
+    MCP -- "proof search" --> PSE
+    CLI -- "search queries" --> RP
+    CLI3 -- "batch extraction" --> ECO
+
+    subgraph "Backend"
+        ST["Storage (SQLite)<br/><br/>decls, deps<br/>wl_vecs, sym_freq<br/>idx_meta"]
+        CB["Coq Backend Processes<br/>(one per session)<br/><br/>Load .v files<br/>Execute tactics<br/>Report state"]
+        CLE["Coq Library Extraction<br/><br/>Via coq-lsp or SerAPI"]
+    end
+
+    RP -- "SQL queries" --> ST
+    PSM -- "coq-lsp / SerAPI" --> CB
+    PSE -- "tactic verify" --> CB
+    PSE -- "premise retrieval (optional)" --> ST
+    ECO -- "session ops (reuse)" --> PSM
+
+    FAO["Fill Admits Orchestrator<br/>&nbsp; search → Proof Search Engine<br/>&nbsp; sessions → Proof Session Manager"]
+    ECO --> FAO
+    FAO --> PSE
+    FAO --> PSM
+
+    CLE -- "writes during indexing" --> ST
+
+    OUT["JSON Lines output (Phase 3)<br/>(.jsonl files) &nbsp;&nbsp; Training Data (opt. few-shot)"]
+    ECO --> OUT
 ```
 
 ## Data Flow
@@ -149,16 +140,15 @@ The system has four major subsystems — semantic search (Phase 1), proof intera
 
 The index is a derived artifact. Its lifecycle is managed by the MCP Server on startup:
 
-```
-Server start
-  │
-  ├─ Database missing? → INDEX_MISSING error on all search tool calls
-  │
-  ├─ Schema version mismatch? → Full re-index from scratch
-  │
-  ├─ Library version changed? → Full rebuild before serving queries
-  │
-  └─ All checks pass → Load histograms into memory, serve queries
+```mermaid
+flowchart TD
+    A["Server start"] --> B{"Database missing?"}
+    B -- Yes --> C["INDEX_MISSING error on all search tool calls"]
+    B -- No --> D{"Schema version mismatch?"}
+    D -- Yes --> E["Full re-index from scratch"]
+    D -- No --> F{"Library version changed?"}
+    F -- Yes --> G["Full rebuild before serving queries"]
+    F -- No --> H["Load histograms into memory, serve queries"]
 ```
 
 Re-indexing is always a full rebuild. See [storage.md](storage.md) for the `index_meta` table schema and [mcp-server.md](mcp-server.md) for the error contract.

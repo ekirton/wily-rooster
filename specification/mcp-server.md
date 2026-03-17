@@ -32,7 +32,14 @@ Define the MCP server that translates MCP tool calls into pipeline queries, sess
 
 ### 4.1 Transport
 
-The server shall communicate via stdio transport, compatible with Claude Code's MCP configuration.
+The server shall support two transport modes selected via `--transport`:
+
+| Mode | Flag | Usage |
+|------|------|-------|
+| SSE (default in container) | `--transport sse --host 127.0.0.1 --port 3000` | Persistent HTTP daemon; Claude Code connects via `url` in `mcp.json` |
+| stdio | `--transport stdio` | Subprocess mode; Claude Code spawns the process directly |
+
+In the standard container deployment the server runs in SSE mode as a background daemon, enabling the server to be stopped and restarted independently of the Claude Code session. Claude Code connects to `http://127.0.0.1:3000/sse`.
 
 ### 4.2 Search Tool Signatures
 
@@ -431,7 +438,7 @@ Session-related errors for `proof_search` use the same error codes and message t
 
 - The server is a thin adapter — it shall not implement search logic, manage storage directly, parse Coq expressions, manage proof session state, or generate Mermaid syntax directly.
 - Startup time includes loading WL histograms into memory (~100MB for 100K declarations).
-- Stdio transport for Claude Code compatibility.
+- SSE transport is the default in container deployment; stdio is retained for testing and direct invocation.
 - Proof interaction tools are available immediately on startup, independent of index state.
 
 ## 7. Examples
@@ -586,7 +593,7 @@ Response:
 
 ## 8. Language-Specific Notes (Python)
 
-- Use the `mcp` Python SDK for MCP protocol handling and stdio transport.
+- Use the `mcp` Python SDK for MCP protocol handling. SSE transport uses `mcp.server.sse.SseServerTransport` with Starlette and uvicorn. Stdio transport uses `mcp.server.stdio.stdio_server`.
 - Use `@server.tool()` decorator pattern for tool registration.
 - Use `asyncio` for the server event loop.
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` for search response types.

@@ -9,7 +9,9 @@ The thin adapter layer between Claude Code, the search backend, the proof sessio
 
 ## Transport
 
-The server communicates via stdio transport, compatible with Claude Code's MCP configuration.
+The server runs as a persistent HTTP daemon and communicates via SSE transport. Claude Code connects to it using a `url` entry in `mcp.json` (`http://127.0.0.1:3000/sse`) rather than spawning a subprocess. This allows the server to be stopped and restarted independently — by the developer or by Claude itself — without terminating the Claude session.
+
+The stdio transport (`--transport stdio`) remains available for direct invocation and testing but is not used in the standard container deployment.
 
 ## Tool Signatures
 

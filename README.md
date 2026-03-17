@@ -4,7 +4,7 @@
 
 Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
 
-Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations. Proof states, proof trees, and dependency subgraphs can be visualized as Mermaid diagrams via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server) service.
+Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, neural, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations. A neural premise selection system uses a bi-encoder model to learn semantic similarity between proof states and premises, complementing symbolic retrieval channels. Proof states, proof trees, and dependency subgraphs can be visualized as Mermaid diagrams via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server) service.
 
 ## Features
 
@@ -13,9 +13,18 @@ Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides s
 - **Structural search** — find declarations with similar expression tree structure using Weisfeiler-Lehman graph kernels, tree edit distance, and collapse matching
 - **Symbol search** — MePo-style iterative relevance filtering based on weighted symbol overlap
 - **Lexical search** — FTS5 full-text search over declaration names, statements, and modules
-- **Type search** — multi-channel fusion combining structural, symbol, and lexical results
+- **Neural search** — learned semantic similarity via a bi-encoder embedding model (INT8, CPU-only), fused with symbolic channels via RRF
+- **Type search** — multi-channel fusion combining structural, symbol, lexical, and neural results
 - **Dependency navigation** — explore `uses`, `used_by`, `same_module`, and `same_typeclass` relationships
 - **Module browsing** — list and filter indexed Coq modules
+
+### Neural Premise Selection
+
+- **Model training** — train a bi-encoder on extracted proof traces using masked contrastive loss with hard negative mining
+- **Model evaluation** — measure Recall@k and MRR, compare neural vs. symbolic retrieval to verify complementary value
+- **Fine-tuning** — adapt a pre-trained model to project-specific proofs with lower learning rate
+- **INT8 quantization** — export to ONNX with dynamic INT8 quantization for <10ms CPU inference
+- **Graceful degradation** — neural channel is optional; search works identically without a model checkpoint
 
 ### Proof Interaction
 
@@ -286,8 +295,14 @@ flowchart TD
 
     subgraph Core
         RP["Retrieval Pipeline"]
+        NC["Neural Channel\n(bi-encoder embeddings)"]
         PSM["Proof Session Manager"]
         MR["Mermaid Renderer\n(pure function)"]
+    end
+
+    subgraph Training["Neural Training (offline)"]
+        NTP["Training Pipeline"]
+        ONNX["INT8 ONNX Model"]
     end
 
     DB[("Storage\n(SQLite)")]
@@ -311,14 +326,19 @@ flowchart TD
     CLI -->|"proof replay"| PSM
 
     RP -->|"SQLite queries"| DB
+    RP --> NC
+    NC -->|"cosine search"| DB
     PSM --> CB
     MR -->|"Mermaid syntax"| MCHART
 
     EXT -->|"coq-lsp / SerAPI"| VO
     EXT -->|"writes during indexing"| DB
+
+    NTP -->|"trains on proof traces"| ONNX
+    ONNX -->|"loaded at startup"| NC
 ```
 
-The search subsystem (Retrieval Pipeline + Storage), proof interaction subsystem (Proof Session Manager + Coq Backend Processes), and visualization subsystem (Mermaid Renderer) are independent at runtime. The Mermaid Renderer is a pure function component with no external dependencies — it generates Mermaid syntax text that the Mermaid Chart MCP server renders into images.
+The search subsystem (Retrieval Pipeline + Storage), proof interaction subsystem (Proof Session Manager + Coq Backend Processes), and visualization subsystem (Mermaid Renderer) are independent at runtime. The neural channel is optional — when no model checkpoint is available, the pipeline operates with symbolic channels only. The Mermaid Renderer is a pure function component with no external dependencies — it generates Mermaid syntax text that the Mermaid Chart MCP server renders into images.
 
 ### Retrieval Channels
 
@@ -329,10 +349,11 @@ The search subsystem (Retrieval Pipeline + Storage), proof interaction subsystem
 | FTS5 | SQLite full-text search with BM25 | Name and text matching |
 | TED | Zhang-Shasha tree edit distance | Fine structural ranking (≤ 50 nodes) |
 | Const Jaccard | Jaccard similarity of constant name sets | Lightweight complement |
+| Neural | Bi-encoder cosine similarity (INT8 ONNX) | Learned semantic relevance |
 
 Channels are combined via:
 - **Fine-ranking weighted sum** for `search_by_structure`
-- **Reciprocal Rank Fusion** (k=60) for `search_by_type`
+- **Reciprocal Rank Fusion** (k=60) for `search_by_type` (includes neural channel when available)
 
 ## Development
 
@@ -366,6 +387,12 @@ src/poule/
 ├── session/         # Proof session manager, types, errors
 ├── serialization/   # Proof state JSON serialization + diff computation
 ├── rendering/       # Mermaid diagram generation (proof state, tree, deps, sequence)
+├── neural/          # Neural premise selection
+│   ├── encoder.py       # ONNX Runtime encoder interface
+│   ├── index.py         # Brute-force cosine search over embeddings
+│   ├── channel.py       # Neural retrieval channel + availability checks
+│   ├── embeddings.py    # Embedding write/read paths
+│   └── training/        # Training pipeline (data, trainer, evaluator, quantizer, validator)
 ├── server/          # MCP server (handlers, validation, errors)
 └── cli/             # CLI commands and output formatting
 ```

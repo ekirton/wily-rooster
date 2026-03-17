@@ -8,10 +8,11 @@ import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import CallToolResult, Tool, TextContent
 
 from wily_rooster.server.handlers import (
     handle_find_related,
@@ -21,6 +22,18 @@ from wily_rooster.server.handlers import (
     handle_search_by_structure,
     handle_search_by_symbols,
     handle_search_by_type,
+    handle_open_proof_session,
+    handle_close_proof_session,
+    handle_list_proof_sessions,
+    handle_observe_proof_state,
+    handle_get_proof_state_at_step,
+    handle_extract_proof_trace,
+    handle_submit_tactic,
+    handle_step_backward,
+    handle_step_forward,
+    handle_submit_tactic_batch,
+    handle_get_proof_premises,
+    handle_get_step_premises,
 )
 from wily_rooster.storage.errors import IndexNotFoundError, IndexVersionError
 
@@ -150,6 +163,190 @@ TOOL_DEFINITIONS = [
             },
         },
     ),
+    # --- Proof interaction tools (Spec §4.3) ---
+    Tool(
+        name="open_proof_session",
+        description="Start an interactive proof session for a named proof in a .v file.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to a .v file",
+                },
+                "proof_name": {
+                    "type": "string",
+                    "description": "Fully qualified proof name within the file",
+                },
+            },
+            "required": ["file_path", "proof_name"],
+        },
+    ),
+    Tool(
+        name="close_proof_session",
+        description="Terminate a proof session and release its Coq backend process.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID returned by open_proof_session",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="list_proof_sessions",
+        description="List all active proof sessions with metadata.",
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    Tool(
+        name="observe_proof_state",
+        description="Get the current proof state (goals, hypotheses, focused goal).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="get_proof_state_at_step",
+        description="Get the proof state at a specific step index.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "step": {
+                    "type": "integer",
+                    "description": "Step index (0-based)",
+                },
+            },
+            "required": ["session_id", "step"],
+        },
+    ),
+    Tool(
+        name="extract_proof_trace",
+        description="Get the full proof trace (all states + tactics).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="submit_tactic",
+        description="Submit a tactic and receive the resulting proof state.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "tactic": {
+                    "type": "string",
+                    "description": "Coq tactic to execute",
+                },
+            },
+            "required": ["session_id", "tactic"],
+        },
+    ),
+    Tool(
+        name="step_backward",
+        description="Undo the last tactic, returning to the previous proof state.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="step_forward",
+        description="Replay the next tactic from the original proof script.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="submit_tactic_batch",
+        description="Submit multiple tactics in sequence. Stops on first failure.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "tactics": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of tactics to execute in order",
+                },
+            },
+            "required": ["session_id", "tactics"],
+        },
+    ),
+    Tool(
+        name="get_proof_premises",
+        description="Get premise annotations for all tactic steps in the proof.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="get_step_premises",
+        description="Get premise annotations for a single proof step.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "step": {
+                    "type": "integer",
+                    "description": "Step index (1-based, range [1, total_steps])",
+                },
+            },
+            "required": ["session_id", "step"],
+        },
+    ),
 ]
 
 
@@ -259,10 +456,16 @@ class _ServerContext:
         self.found_version: str | None = None
         self.expected_version: str | None = None
         self.pipeline: _PipelineFacade | None = None
+        self.session_manager: Any = None
 
 
 def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
-    """Route an MCP tool call to the appropriate handler function."""
+    """Route an MCP tool call to the appropriate handler function.
+
+    Returns a dict for sync search tools, or a coroutine for async proof
+    interaction tools. The caller (``call_tool``) awaits coroutines.
+    """
+    # Search tools (sync — return dict directly)
     if name == "search_by_name":
         return handle_search_by_name(
             ctx, pattern=arguments.get("pattern", ""), limit=arguments.get("limit", 50)
@@ -290,6 +493,63 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
         )
     elif name == "list_modules":
         return handle_list_modules(ctx, prefix=arguments.get("prefix", ""))
+    # Proof interaction tools (async — return coroutine, awaited by call_tool)
+    elif name == "open_proof_session":
+        return handle_open_proof_session(
+            ctx,
+            file_path=arguments.get("file_path", ""),
+            proof_name=arguments.get("proof_name", ""),
+        )
+    elif name == "close_proof_session":
+        return handle_close_proof_session(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "list_proof_sessions":
+        return handle_list_proof_sessions(ctx)
+    elif name == "observe_proof_state":
+        return handle_observe_proof_state(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "get_proof_state_at_step":
+        return handle_get_proof_state_at_step(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            step=arguments.get("step", 0),
+        )
+    elif name == "extract_proof_trace":
+        return handle_extract_proof_trace(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "submit_tactic":
+        return handle_submit_tactic(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            tactic=arguments.get("tactic", ""),
+        )
+    elif name == "step_backward":
+        return handle_step_backward(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "step_forward":
+        return handle_step_forward(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "submit_tactic_batch":
+        return handle_submit_tactic_batch(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            tactics=arguments.get("tactics", []),
+        )
+    elif name == "get_proof_premises":
+        return handle_get_proof_premises(
+            ctx, session_id=arguments.get("session_id", ""),
+        )
+    elif name == "get_step_premises":
+        return handle_get_step_premises(
+            ctx,
+            session_id=arguments.get("session_id", ""),
+            step=arguments.get("step", 0),
+        )
     else:
         from wily_rooster.server.errors import format_error, PARSE_ERROR
         return format_error(PARSE_ERROR, f"Unknown tool: {name}")
@@ -304,6 +564,15 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
     )
 
     ctx = _ServerContext()
+
+    # Initialize proof session manager (independent of search index)
+    from wily_rooster.session.manager import SessionManager
+
+    async def _default_backend_factory(file_path: str):
+        """Placeholder backend factory — will be replaced with real CoqBackend."""
+        raise NotImplementedError("Coq backend not yet configured")
+
+    ctx.session_manager = SessionManager(_default_backend_factory)
 
     if not db_path.exists():
         logger.error("Database file not found: %s", db_path)
@@ -332,7 +601,10 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
 
     @server.call_tool()
     async def call_tool(name: str, arguments: dict):
+        import inspect
         result = _dispatch_tool(ctx, name, arguments)
+        if inspect.isawaitable(result):
+            result = await result
         # Convert handler dict response to MCP types
         content = result.get("content", [])
         mcp_content = []
@@ -340,7 +612,7 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
             if item.get("type") == "text":
                 mcp_content.append(TextContent(type="text", text=item["text"]))
         is_error = result.get("isError", False)
-        return mcp_content
+        return CallToolResult(content=mcp_content, isError=is_error)
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())

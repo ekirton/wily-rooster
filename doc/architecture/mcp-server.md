@@ -1,9 +1,9 @@
 # MCP Server
 
-The thin adapter layer between Claude Code, the search backend, and the proof session manager. The [CLI](cli.md) is a peer adapter that provides the same search capabilities for terminal users.
+The thin adapter layer between Claude Code, the search backend, the proof session manager, and the Mermaid renderer. The [CLI](cli.md) is a peer adapter that provides the same search capabilities for terminal users.
 
-**Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md), [Proof Interaction MCP Tools](../features/proof-mcp-tools.md)
-**Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface), [Epic 6: MCP Tool Surface](../requirements/stories/proof-interaction-protocol.md#epic-6-mcp-tool-surface)
+**Feature**: [MCP Tool Surface](../features/mcp-tool-surface.md), [Proof Interaction MCP Tools](../features/proof-mcp-tools.md), [Visualization MCP Tools](../features/visualization-mcp-tools.md)
+**Stories**: [Epic 2: MCP Server and Tool Surface](../requirements/stories/tree-search-mcp.md#epic-2-mcp-server-and-tool-surface), [Epic 6: MCP Tool Surface](../requirements/stories/proof-interaction-protocol.md#epic-6-mcp-tool-surface), [Epics 1–4](../requirements/stories/proof-visualization-widgets.md)
 
 ---
 
@@ -139,6 +139,43 @@ get_step_premises(
 
 Proof interaction response types are defined in [data-models/proof-types.md](data-models/proof-types.md). Serialization format is defined in [proof-serialization.md](proof-serialization.md).
 
+## Visualization Tool Signatures
+
+```typescript
+// Render a proof state as a Mermaid diagram
+visualize_proof_state(
+  session_id: string,              // active session to read state from
+  step?: number,                   // step index (default: current step)
+  detail_level?: "summary" | "standard" | "detailed"  // default: "standard"
+) → { mermaid: string, step_index: number }
+
+// Render a completed proof as a Mermaid tree diagram
+visualize_proof_tree(
+  session_id: string               // session with a completed proof
+) → { mermaid: string, total_steps: number }
+
+// Render a theorem's dependency subgraph as a Mermaid diagram
+visualize_dependencies(
+  name: string,                    // fully qualified theorem name
+  max_depth?: number,              // default: 2
+  max_nodes?: number               // default: 50
+) → { mermaid: string, node_count: number, truncated: boolean }
+
+// Render step-by-step proof evolution as a sequence of Mermaid diagrams
+visualize_proof_sequence(
+  session_id: string,              // session with a completed proof
+  detail_level?: "summary" | "standard" | "detailed"  // default: "standard"
+) → { diagrams: { step_index: number, tactic: string | null, mermaid: string }[] }
+```
+
+Visualization tools delegate to the [Mermaid Renderer](mermaid-renderer.md) for diagram generation. The MCP server is responsible for:
+- Resolving `session_id` to proof state / trace data via the Proof Session Manager
+- Resolving `name` to dependency data via the search index (`find_related` with `uses`)
+- Passing resolved data and configuration to the renderer
+- Returning the renderer's Mermaid text in the response
+
+Visualization tools do **not** render images — they return Mermaid syntax text. Rendering to a visual image is the client's responsibility (e.g., via the Mermaid Chart MCP service).
+
 ## Server Responsibilities
 
 The MCP server is a thin adapter. It:
@@ -146,11 +183,12 @@ The MCP server is a thin adapter. It:
 - Delegates Coq expression parsing to the retrieval pipeline — pipeline parse errors are translated to `PARSE_ERROR` responses
 - Translates MCP tool calls to search backend queries
 - Delegates proof interaction tool calls to the [Proof Session Manager](proof-session.md)
-- Formats search backend and session manager results into MCP response objects
+- Delegates visualization tool calls to the [Mermaid Renderer](mermaid-renderer.md)
+- Formats search backend, session manager, and renderer results into MCP response objects
 - Serializes proof interaction types using the [proof serialization](proof-serialization.md) conventions
-- Handles errors (unknown declarations, parse failures, session errors) with structured error responses
+- Handles errors (unknown declarations, parse failures, session errors, visualization errors) with structured error responses
 
-It does **not** implement search logic, manage storage, parse Coq expressions, or manage proof session state directly.
+It does **not** implement search logic, manage storage, parse Coq expressions, manage proof session state, or generate Mermaid syntax directly.
 
 ### `find_related` query strategies
 
@@ -188,6 +226,9 @@ All error responses use MCP's standard error format:
 | Already at initial state (step backward) | `NO_PREVIOUS_STATE` | Cannot step backward: already at the initial proof state. |
 | Already at final step (step forward) | `PROOF_COMPLETE` | Cannot step forward: proof is already complete at step `{total_steps}`. |
 | Backend process crashed | `BACKEND_CRASHED` | The Coq backend for session `{session_id}` has crashed. Close the session and open a new one. |
+| Proof not complete (visualize_proof_tree, visualize_proof_sequence) | `PROOF_INCOMPLETE` | Cannot visualize proof tree: proof in session `{session_id}` is not yet complete. |
+| Declaration not found (visualize_dependencies) | `NOT_FOUND` | Declaration `{name}` not found in the index. |
+| Diagram too large (renderer hit max_nodes) | `DIAGRAM_TRUNCATED` | Diagram truncated at `{max_nodes}` nodes. Reduce max_depth or max_nodes for a smaller diagram. (Warning, not error — included alongside a valid diagram.) |
 
 On startup, the server checks the index in this order:
 1. Does the database file exist? If not → `INDEX_MISSING`.

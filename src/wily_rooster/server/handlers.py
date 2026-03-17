@@ -12,6 +12,7 @@ from wily_rooster.server.errors import (
     INDEX_VERSION_MISMATCH,
     NOT_FOUND,
     PARSE_ERROR,
+    PROOF_INCOMPLETE,
 )
 from wily_rooster.session.errors import SessionError
 from wily_rooster.server.validation import (
@@ -333,3 +334,179 @@ async def handle_get_step_premises(
     except SessionError as exc:
         return _session_error_response(exc)
     return _format_success(annotation)
+
+
+# ---------------------------------------------------------------------------
+# Visualization handlers (Spec §4.4)
+# ---------------------------------------------------------------------------
+
+def _format_json(data: Any) -> str:
+    """Format response data as a JSON string."""
+    return json.dumps(_serialize(data))
+
+
+def _format_json_error(code: str, message: str) -> str:
+    """Format an error as a JSON string."""
+    return json.dumps({"error": {"code": code, "message": message}})
+
+
+async def handle_visualize_proof_state(
+    *,
+    session_id: str,
+    session_manager: Any,
+    renderer: Any,
+    step: int | None = None,
+    detail_level: str | None = None,
+) -> str:
+    """Handle visualize_proof_state tool call.
+
+    Returns a JSON string with {mermaid, step_index} or {error}.
+    """
+    from wily_rooster.server.validation import validate_detail_level
+
+    try:
+        session_id = validate_string(session_id)
+    except (ValueError, Exception):
+        return _format_json_error(PARSE_ERROR, "session_id must be a non-empty string.")
+
+    dl = validate_detail_level(detail_level)
+
+    try:
+        if step is not None:
+            state = await session_manager.get_state_at_step(session_id, step)
+        else:
+            state = await session_manager.observe_state(session_id)
+    except SessionError as exc:
+        return _format_json_error(exc.code, exc.message)
+
+    mermaid = renderer.render_proof_state(state, dl)
+    return _format_json({"mermaid": mermaid, "step_index": state.step_index})
+
+
+async def handle_visualize_proof_tree(
+    *,
+    session_id: str,
+    session_manager: Any,
+    renderer: Any,
+) -> str:
+    """Handle visualize_proof_tree tool call.
+
+    Returns a JSON string with {mermaid, total_steps} or {error}.
+    """
+    try:
+        session_id = validate_string(session_id)
+    except (ValueError, Exception):
+        return _format_json_error(PARSE_ERROR, "session_id must be a non-empty string.")
+
+    try:
+        trace = await session_manager.extract_trace(session_id)
+    except SessionError as exc:
+        return _format_json_error(exc.code, exc.message)
+
+    # Check proof is complete
+    if trace.steps and not trace.steps[-1].state.is_complete:
+        return _format_json_error(
+            PROOF_INCOMPLETE,
+            f"Cannot visualize proof tree: proof in session {session_id} is not yet complete.",
+        )
+
+    mermaid = renderer.render_proof_tree(trace)
+    return _format_json({"mermaid": mermaid, "total_steps": trace.total_steps})
+
+
+async def handle_visualize_dependencies(
+    *,
+    name: str,
+    search_index: Any,
+    renderer: Any,
+    max_depth: int = 2,
+    max_nodes: int = 50,
+) -> str:
+    """Handle visualize_dependencies tool call.
+
+    Returns a JSON string with {mermaid, node_count, truncated} or {error}.
+    """
+    try:
+        name = validate_string(name)
+    except (ValueError, Exception):
+        return _format_json_error(PARSE_ERROR, "name must be a non-empty string.")
+
+    # Check index availability
+    if hasattr(search_index, "index_ready") and not search_index.index_ready:
+        return _format_json_error(INDEX_MISSING, "Index database not found. Run the indexing command to create it.")
+
+    # Resolve dependency data from search index
+    try:
+        adjacency_list = _resolve_dependencies(search_index, name, max_depth)
+    except Exception:
+        return _format_json_error(NOT_FOUND, f"Declaration {name} not found in the index.")
+
+    result = renderer.render_dependencies(name, adjacency_list, max_depth=max_depth, max_nodes=max_nodes)
+    return _format_json({
+        "mermaid": result.mermaid,
+        "node_count": result.node_count,
+        "truncated": result.truncated,
+    })
+
+
+def _resolve_dependencies(
+    search_index: Any,
+    name: str,
+    max_depth: int,
+) -> dict[str, list[dict[str, str]]]:
+    """Resolve dependency adjacency list from the search index via find_related."""
+    from collections import deque
+
+    adjacency_list: dict[str, list[dict[str, str]]] = {}
+    visited: set[str] = set()
+    queue: deque[tuple[str, int]] = deque()
+    queue.append((name, 0))
+    visited.add(name)
+
+    while queue:
+        current, depth = queue.popleft()
+        related = search_index.find_related(current, "uses")
+
+        deps = []
+        if related:
+            for item in related:
+                dep_name = item.get("name", item) if isinstance(item, dict) else getattr(item, "name", str(item))
+                dep_kind = item.get("kind", "lemma") if isinstance(item, dict) else getattr(item, "kind", "lemma")
+                deps.append({"name": dep_name, "kind": dep_kind})
+                if dep_name not in visited and depth < max_depth:
+                    visited.add(dep_name)
+                    queue.append((dep_name, depth + 1))
+
+        adjacency_list[current] = deps
+
+    return adjacency_list
+
+
+async def handle_visualize_proof_sequence(
+    *,
+    session_id: str,
+    session_manager: Any,
+    renderer: Any,
+    detail_level: str | None = None,
+) -> str:
+    """Handle visualize_proof_sequence tool call.
+
+    Returns a JSON string with {diagrams: [{step_index, tactic, mermaid}, ...]}.
+    """
+    from wily_rooster.server.validation import validate_detail_level
+
+    try:
+        session_id = validate_string(session_id)
+    except (ValueError, Exception):
+        return _format_json_error(PARSE_ERROR, "session_id must be a non-empty string.")
+
+    dl = validate_detail_level(detail_level)
+
+    try:
+        trace = await session_manager.extract_trace(session_id)
+    except SessionError as exc:
+        return _format_json_error(exc.code, exc.message)
+
+    entries = renderer.render_proof_sequence(trace, dl)
+    diagrams = [_serialize(entry) for entry in entries]
+    return _format_json({"diagrams": diagrams})

@@ -1,8 +1,8 @@
 # Wily Rooster
 
-Semantic lemma search and interactive proof exploration for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
+Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
 
-Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations.
+Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations. Proof states, proof trees, and dependency subgraphs can be visualized as Mermaid diagrams via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server) service.
 
 ## Features
 
@@ -25,6 +25,14 @@ Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and pro
 - **Premise annotation** — identify which lemmas, hypotheses, constructors, and definitions each tactic used
 - **Batch tactics** — submit multiple tactics in a single request (P1)
 - **Concurrent sessions** — multiple independent proof sessions with isolated state
+
+### Proof Visualization
+
+- **Proof state diagrams** — render goals, hypotheses, and local context as Mermaid flowcharts with three detail levels (summary, standard, detailed)
+- **Proof tree diagrams** — render completed proofs as top-down trees showing tactic applications and branching structure
+- **Dependency subgraphs** — render theorem dependency neighborhoods as Mermaid directed graphs with depth limiting
+- **Step-by-step sequences** — render proof evolution as a series of diagrams with diff highlighting for added/removed/changed elements
+- **Mermaid Chart MCP integration** — generated Mermaid syntax is rendered visually via the Mermaid Chart MCP service
 
 ## Requirements
 
@@ -201,6 +209,10 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json`):
     "coq-search": {
       "command": "uv",
       "args": ["run", "--project", "/path/to/wily-rooster", "python", "-m", "wily_rooster.server", "--db", "/path/to/wily-rooster/index.db"]
+    },
+    "mermaid": {
+      "command": "npx",
+      "args": ["-y", "@mermaidchart/mcp-server"]
     }
   }
 }
@@ -208,9 +220,11 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json`):
 
 Replace `/path/to/wily-rooster` with the absolute path to your cloned repository.
 
+The `mermaid` entry adds the [Mermaid Chart MCP server](https://github.com/Mermaid-Chart/mermaid-mcp-server), which renders Mermaid syntax produced by the visualization tools into diagrams. When both servers are configured, Claude Code can visualize proof states, proof trees, and dependency graphs by calling a visualization tool to generate the Mermaid syntax and then passing it to the Mermaid Chart MCP for rendering.
+
 ## MCP Tools
 
-Once configured, Claude Code has access to 7 search tools and 12 proof interaction tools:
+Once configured, Claude Code has access to 7 search tools, 12 proof interaction tools, and 4 visualization tools:
 
 ### Search Tools
 
@@ -245,6 +259,17 @@ All search tools accept an optional `limit` parameter (default 50, max 200).
 
 Proof interaction tools work independently of the search index — no indexing is required.
 
+### Visualization Tools
+
+| Tool | Description |
+|------|-------------|
+| `visualize_proof_state` | Render the current proof state as a Mermaid diagram (goals, hypotheses, context) |
+| `visualize_proof_tree` | Render a completed proof as a Mermaid tree diagram (tactic edges, subgoal nodes) |
+| `visualize_dependencies` | Render a theorem's dependency subgraph as a Mermaid directed graph |
+| `visualize_proof_sequence` | Render step-by-step proof evolution as a sequence of Mermaid diagrams with diffs |
+
+Visualization tools generate Mermaid syntax text — they do not render images directly. Use the Mermaid Chart MCP service (see below) to render the diagrams visually.
+
 ## Architecture
 
 ```
@@ -253,29 +278,29 @@ Claude Code / LLM          Terminal user
   | MCP tool calls (stdio)    | CLI subcommands
   v                           v
 MCP Server                  CLI
-  |         |                 |         |
-  | search  | proof           | search  | proof
-  | queries | session ops     | queries | replay
-  v         v                 v         v
-Retrieval   Proof Session   Retrieval  Proof Session
-Pipeline    Manager         Pipeline   Manager
-  |           |                |
-  | SQLite    | coq-lsp /      | SQLite
-  | queries   | SerAPI         | queries
-  v           v                v
-Storage     Coq Backend      Storage
-(SQLite)    Processes        (SQLite)
-  ^         (per-session)
-  |
+  |         |       |         |         |
+  | search  | proof | viz     | search  | proof
+  | queries | sess  | tools   | queries | replay
+  v         v       v         v         v
+Retrieval   Proof  Mermaid  Retrieval  Proof Session
+Pipeline    Sess.  Renderer Pipeline   Manager
+  |         Mgr      |        |
+  | SQLite    |      | pure    | SQLite
+  | queries   |      | fn      | queries
+  v           v      |         v
+Storage     Coq    (no       Storage
+(SQLite)    Backend deps)    (SQLite)
+  ^         Procs
+  |         (per-session)
   | Writes during indexing
 Coq Library Extraction
   |
-  | coq-lsp / SerAPI
-  v
-Compiled .vo files
+  | coq-lsp / SerAPI          Mermaid Chart
+  v                           MCP Server
+Compiled .vo files            (renders diagrams)
 ```
 
-The search subsystem (Retrieval Pipeline + Storage) and proof interaction subsystem (Proof Session Manager + Coq Backend Processes) are independent at runtime. Search does not require proof sessions, and proof interaction does not require a search index.
+The search subsystem (Retrieval Pipeline + Storage), proof interaction subsystem (Proof Session Manager + Coq Backend Processes), and visualization subsystem (Mermaid Renderer) are independent at runtime. The Mermaid Renderer is a pure function component with no external dependencies — it generates Mermaid syntax text that the Mermaid Chart MCP server renders into images.
 
 ### Retrieval Channels
 
@@ -322,6 +347,7 @@ src/wily_rooster/
 ├── extraction/      # Offline .vo file extraction
 ├── session/         # Proof session manager, types, errors
 ├── serialization/   # Proof state JSON serialization + diff computation
+├── rendering/       # Mermaid diagram generation (proof state, tree, deps, sequence)
 ├── server/          # MCP server (handlers, validation, errors)
 └── cli/             # CLI commands and output formatting
 ```

@@ -21,6 +21,10 @@ NO_PREVIOUS_STATE: str = "NO_PREVIOUS_STATE"
 PROOF_COMPLETE: str = "PROOF_COMPLETE"
 BACKEND_CRASHED: str = "BACKEND_CRASHED"
 
+# Error code constants — visualization
+PROOF_INCOMPLETE: str = "PROOF_INCOMPLETE"
+DIAGRAM_TRUNCATED: str = "DIAGRAM_TRUNCATED"
+
 
 def format_error(code: str, message: str) -> dict:
     """Format an error as an MCP error response dict.

@@ -1,20 +1,20 @@
 # MCP Server
 
-Thin adapter between Claude Code, the retrieval pipeline, and the proof session manager — exposing search and proof interaction tools via the Model Context Protocol.
+Thin adapter between Claude Code, the retrieval pipeline, the proof session manager, and the Mermaid renderer — exposing search, proof interaction, and visualization tools via the Model Context Protocol.
 
-**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
+**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [mermaid-renderer.md](../doc/architecture/mermaid-renderer.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
 
 ---
 
 ## 1. Purpose
 
-Define the MCP server that translates MCP tool calls into pipeline queries and session manager operations, validates inputs, formats responses, manages index lifecycle on startup, and serializes proof interaction types.
+Define the MCP server that translates MCP tool calls into pipeline queries, session manager operations, and renderer invocations — validates inputs, formats responses, manages index lifecycle on startup, and serializes proof interaction types.
 
 ## 2. Scope
 
-**In scope**: 7 search tool handlers, 12 proof interaction tool handlers (11 P0 + 1 P1), input validation, error formatting, index state management, startup checks, response construction, proof state serialization.
+**In scope**: 7 search tool handlers, 12 proof interaction tool handlers (11 P0 + 1 P1), 4 visualization tool handlers, input validation, error formatting, index state management, startup checks, response construction, proof state serialization, visualization dispatch.
 
-**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), session state management (owned by proof-session), proof type definitions (owned by data-models/proof-types), serialization format details (owned by proof-serialization).
+**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), session state management (owned by proof-session), proof type definitions (owned by data-models/proof-types), serialization format details (owned by proof-serialization), Mermaid diagram generation logic (owned by mermaid-renderer).
 
 ## 3. Definitions
 
@@ -25,6 +25,8 @@ Define the MCP server that translates MCP tool calls into pipeline queries and s
 | Index state | The loaded state of the search index (ready, missing, or version-mismatched) |
 | Session manager | The stateful component managing interactive proof sessions (see proof-session spec) |
 | Proof state | A snapshot of goals and hypotheses at a single point in a proof |
+| Mermaid renderer | The pure function component that generates Mermaid syntax from proof data (see mermaid-renderer spec) |
+| Detail level | One of `summary`, `standard`, `detailed` — controls proof state diagram density |
 
 ## 4. Behavioral Requirements
 
@@ -180,9 +182,80 @@ All proof interaction tools delegate to the session manager. The MCP server does
 - Delegates to: `session_manager.get_step_premises(session_id, step)`
 - On step out of range: returns `STEP_OUT_OF_RANGE` error.
 
-### 4.4 Input Validation
+### 4.4 Visualization Tool Signatures
 
-The server shall validate all inputs before delegating to the pipeline or session manager:
+All visualization tools delegate diagram generation to the Mermaid renderer. The MCP server resolves data (from the session manager or search index) and passes it to the renderer. Visualization tools return Mermaid syntax text, not rendered images.
+
+#### visualize_proof_state(session_id, step?, detail_level?)
+
+- REQUIRES: `session_id` is a non-empty string. `step` is a non-negative integer (default: current step). `detail_level` is one of `"summary"`, `"standard"`, `"detailed"` (default: `"standard"`).
+- ENSURES: Returns `{ mermaid: string, step_index: number }`.
+- Resolves proof state: if `step` is provided, delegates to `session_manager.get_state_at_step(session_id, step)`; otherwise `session_manager.observe_state(session_id)`.
+- Delegates rendering to: `renderer.render_proof_state(state, detail_level)`
+- On unknown/expired session: returns the appropriate session error.
+- On step out of range: returns `STEP_OUT_OF_RANGE` error.
+
+> **Given** an active session at step 3 with 2 goals
+> **When** `visualize_proof_state(session_id)` is called with default parameters
+> **Then** the response contains a `mermaid` string and `step_index: 3`
+
+> **Given** a session where the proof is complete
+> **When** `visualize_proof_state` is called
+> **Then** the Mermaid output contains a single `Proof complete (Qed)` node
+
+#### visualize_proof_tree(session_id)
+
+- REQUIRES: `session_id` is a non-empty string.
+- ENSURES: Returns `{ mermaid: string, total_steps: number }`.
+- Resolves proof trace: delegates to `session_manager.extract_trace(session_id)`.
+- Verifies the final step's state has `is_complete=true`. If not, returns `PROOF_INCOMPLETE` error.
+- Delegates rendering to: `renderer.render_proof_tree(trace)`
+- On unknown/expired session: returns the appropriate session error.
+
+> **Given** a session with a completed proof of 5 steps
+> **When** `visualize_proof_tree(session_id)` is called
+> **Then** the response contains a Mermaid tree diagram and `total_steps: 5`
+
+> **Given** a session where the proof is not yet complete
+> **When** `visualize_proof_tree(session_id)` is called
+> **Then** the response is a `PROOF_INCOMPLETE` error
+
+#### visualize_dependencies(name, max_depth?, max_nodes?)
+
+- REQUIRES: `name` is a non-empty string. `max_depth` is a positive integer (default: 2). `max_nodes` is a positive integer (default: 50).
+- ENSURES: Returns `{ mermaid: string, node_count: number, truncated: boolean }`.
+- Resolves dependency data: queries the search index via `find_related(name, "uses")` recursively up to `max_depth` hops to build the adjacency list.
+- Delegates rendering to: `renderer.render_dependencies(name, adjacency_list, max_depth, max_nodes)`
+- On declaration not found: returns `NOT_FOUND` error.
+- When the diagram is truncated (max_nodes exceeded): includes a `DIAGRAM_TRUNCATED` warning in the response alongside the valid diagram.
+
+> **Given** a theorem `Nat.add_comm` in the search index
+> **When** `visualize_dependencies(name="Nat.add_comm", max_depth=1)` is called
+> **Then** the response contains a Mermaid graph of direct dependencies, `node_count`, and `truncated: false`
+
+> **Given** a name not in the search index
+> **When** `visualize_dependencies(name="nonexistent")` is called
+> **Then** the response is a `NOT_FOUND` error
+
+#### visualize_proof_sequence(session_id, detail_level?)
+
+- REQUIRES: `session_id` is a non-empty string. `detail_level` is one of `"summary"`, `"standard"`, `"detailed"` (default: `"standard"`).
+- ENSURES: Returns `{ diagrams: SequenceEntry[] }` where each entry contains `step_index`, `tactic`, and `mermaid`.
+- Resolves proof trace: delegates to `session_manager.extract_trace(session_id)`.
+- Delegates rendering to: `renderer.render_proof_sequence(trace, detail_level)`
+- On unknown/expired session: returns the appropriate session error.
+
+> **Given** a session with a completed proof of 3 steps
+> **When** `visualize_proof_sequence(session_id)` is called
+> **Then** the response contains 4 diagrams (initial state + 3 tactic steps), each with diff annotations
+
+> **Given** a session with an in-progress proof at step 2
+> **When** `visualize_proof_sequence(session_id)` is called
+> **Then** the response contains 3 diagrams (initial state + 2 steps observed so far)
+
+### 4.5 Input Validation
+
+The server shall validate all inputs before delegating to the pipeline, session manager, or renderer:
 
 | Validation | Rule |
 |-----------|------|
@@ -191,13 +264,16 @@ The server shall validate all inputs before delegating to the pipeline or sessio
 | `symbols` list | Must be non-empty; each element must be non-empty after stripping |
 | `relation` parameter | Must be one of the four recognized values |
 | `session_id` parameter | Must be a non-empty string |
-| `step` parameter | Must be a non-negative integer (for `get_proof_state_at_step`); must be a positive integer (for `get_step_premises`) |
+| `step` parameter | Must be a non-negative integer (for `get_proof_state_at_step`, `visualize_proof_state`); must be a positive integer (for `get_step_premises`) |
 | `tactic` parameter | Must be a non-empty string after stripping whitespace |
 | `tactics` list | Must be non-empty; each element must be a non-empty string after stripping |
+| `detail_level` parameter | Must be one of `"summary"`, `"standard"`, `"detailed"` (default: `"standard"`) |
+| `max_depth` parameter | Must be a positive integer (default: 2) |
+| `max_nodes` parameter | Must be a positive integer (default: 50) |
 
 Invalid inputs that cannot be clamped shall return a `PARSE_ERROR` response.
 
-### 4.5 Index State Management
+### 4.6 Index State Management
 
 On startup, the server shall check the index in this order:
 
@@ -206,9 +282,9 @@ On startup, the server shall check the index in this order:
 3. Phase 1: `coq_version` and `mathcomp_version` are stored for informational purposes only. Library version checks are deferred to Phase 2.
 4. All checks pass → create `PipelineContext` (loads WL histograms, inverted index, symbol frequencies into memory) → begin serving queries.
 
-Proof interaction tools do not depend on the search index. They shall function even when the index is missing or version-mismatched.
+Proof interaction tools do not depend on the search index. They shall function even when the index is missing or version-mismatched. Visualization tools that operate on sessions (`visualize_proof_state`, `visualize_proof_tree`, `visualize_proof_sequence`) do not depend on the search index. `visualize_dependencies` requires the search index.
 
-### 4.6 Response Formatting
+### 4.7 Response Formatting
 
 All successful responses shall be formatted as MCP content with `type: "text"` containing a JSON-serialized result.
 
@@ -221,7 +297,18 @@ All successful responses shall be formatted as MCP content with `type: "text"` c
 
 Proof interaction responses shall use the JSON serialization format defined in the proof-serialization specification. `ProofState`, `ProofTrace`, `PremiseAnnotation`, and `Session` objects are serialized using the corresponding `serialize_*` functions from the serialization layer.
 
-### 4.7 Proof Error Response Enrichment
+Visualization responses shall be formatted as MCP content with `type: "text"` containing a JSON-serialized result. The `mermaid` field contains the raw Mermaid syntax string. Example:
+
+```json
+{"mermaid": "flowchart TD\n    s0g0[\"forall n, n + 0 = n\"]\n    ...", "step_index": 0}
+```
+
+For `visualize_proof_sequence`, the response contains a `diagrams` array:
+```json
+{"diagrams": [{"step_index": 0, "tactic": null, "mermaid": "..."}, {"step_index": 1, "tactic": "intro n", "mermaid": "..."}]}
+```
+
+### 4.8 Proof Error Response Enrichment
 
 When a proof interaction tool returns a `TACTIC_ERROR`, the response shall include both the error object and the unchanged `ProofState` in the response body. This allows the LLM to report both the error and the current state without a separate `observe_proof_state` call.
 
@@ -271,9 +358,21 @@ Both server-side validation errors and pipeline-side parse errors use `PARSE_ERR
 
 The MCP server translates `SessionError` exceptions from the session manager into the corresponding MCP error response by mapping `SessionError.code` to the error codes above.
 
+### 5.3 Visualization Errors
+
+| Condition | Error Code | Message Template |
+|-----------|-----------|-----------------|
+| Proof not complete (visualize_proof_tree) | `PROOF_INCOMPLETE` | `Cannot visualize proof tree: proof in session {session_id} is not yet complete.` |
+| Declaration not found (visualize_dependencies) | `NOT_FOUND` | `Declaration {name} not found in the index.` |
+| Diagram truncated (max_nodes exceeded) | `DIAGRAM_TRUNCATED` | `Diagram truncated at {max_nodes} nodes. Reduce max_depth or max_nodes for a smaller diagram.` |
+
+`DIAGRAM_TRUNCATED` is a warning, not a fatal error — the response includes a valid (truncated) diagram alongside the warning. The `truncated: true` flag in the response indicates truncation occurred.
+
+Session-related errors for visualization tools (`SESSION_NOT_FOUND`, `SESSION_EXPIRED`, `BACKEND_CRASHED`, `STEP_OUT_OF_RANGE`) use the same error codes and message templates as proof interaction tools (§5.2).
+
 ## 6. Non-Functional Requirements
 
-- The server is a thin adapter — it shall not implement search logic, manage storage directly, parse Coq expressions, or manage proof session state.
+- The server is a thin adapter — it shall not implement search logic, manage storage directly, parse Coq expressions, manage proof session state, or generate Mermaid syntax directly.
 - Startup time includes loading WL histograms into memory (~100MB for 100K declarations).
 - Stdio transport for Claude Code compatibility.
 - Proof interaction tools are available immediately on startup, independent of index state.
@@ -350,6 +449,51 @@ Response:
 }
 ```
 
+### Successful visualize_proof_state
+
+Request: `visualize_proof_state(session_id="abc123")`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"mermaid\": \"flowchart TD\\n    subgraph goal0[\\\"Goal 0 ✦\\\"]\\n        h0_0[\\\"n : nat\\\"]\\n        t0[\\\"⊢ n + 0 = n\\\"]\\n        h0_0 --> t0\\n    end\", \"step_index\": 0}"}]
+}
+```
+
+### Successful visualize_proof_tree
+
+Request: `visualize_proof_tree(session_id="abc123")`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"mermaid\": \"flowchart TD\\n    s0g0[\\\"forall n, n + 0 = n\\\"]\\n    s0g0 -->|\\\"intro n\\\"| s1g0[\\\"n + 0 = n\\\"]\\n    s1g0 -->|\\\"reflexivity\\\"| s2g0[\\\"✓\\\"]:::discharged\\n    classDef discharged fill:#d4edda,stroke:#28a745,stroke-dasharray:5 5\", \"total_steps\": 2}"}]
+}
+```
+
+### Error: proof incomplete
+
+Request: `visualize_proof_tree(session_id="abc123")` when proof is not yet complete
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"error\": {\"code\": \"PROOF_INCOMPLETE\", \"message\": \"Cannot visualize proof tree: proof in session abc123 is not yet complete.\"}}"}],
+  "isError": true
+}
+```
+
+### Successful visualize_dependencies
+
+Request: `visualize_dependencies(name="Nat.add_comm", max_depth=1)`
+
+Response:
+```json
+{
+  "content": [{"type": "text", "text": "{\"mermaid\": \"flowchart TD\\n    n0[\\\"Nat.add_comm\\\"]:::root\\n    n1[\\\"Nat.add_0_r\\\"]\\n    n0 --> n1\\n    classDef root fill:#fff3cd,stroke:#856404,stroke-width:2px\", \"node_count\": 2, \"truncated\": false}"}]
+}
+```
+
 ## 8. Language-Specific Notes (Python)
 
 - Use the `mcp` Python SDK for MCP protocol handling and stdio transport.
@@ -358,5 +502,7 @@ Response:
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` for search response types.
 - Proof interaction responses use `serialize_*` functions from `wily_rooster.serialization.serialize`.
 - Proof interaction handler functions are `async` to match the session manager's async interface.
+- Visualization handler functions are `async` (session resolution is async); the renderer call itself is synchronous.
 - Package location: `src/wily_rooster/server/`.
-- Handler naming convention: `handle_<tool_name>` (e.g., `handle_open_proof_session`).
+- Handler naming convention: `handle_<tool_name>` (e.g., `handle_open_proof_session`, `handle_visualize_proof_state`).
+- Visualization handlers import from `wily_rooster.rendering.mermaid_renderer`.

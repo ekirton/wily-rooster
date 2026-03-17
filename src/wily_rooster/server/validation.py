@@ -43,6 +43,25 @@ def validate_symbols(symbols: list[str]) -> list[str]:
     return result
 
 
+def validate_detail_level(value: str | None) -> "DetailLevel":
+    """Validate a detail_level parameter.
+
+    Returns DetailLevel.STANDARD for None (default). Raises ValueError for
+    unrecognized values.
+    """
+    from wily_rooster.rendering.types import DetailLevel
+
+    if value is None:
+        return DetailLevel.STANDARD
+
+    _VALID_DETAIL_LEVELS = {"summary", "standard", "detailed"}
+    if value not in _VALID_DETAIL_LEVELS:
+        raise ValueError(
+            f"Invalid detail_level '{value}'. Must be one of: {', '.join(sorted(_VALID_DETAIL_LEVELS))}."
+        )
+    return DetailLevel(value)
+
+
 def validate_relation(relation: str) -> str:
     """Validate a relation parameter against the four recognized values.
 

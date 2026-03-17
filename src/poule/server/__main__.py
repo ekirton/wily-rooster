@@ -34,6 +34,10 @@ from poule.server.handlers import (
     handle_submit_tactic_batch,
     handle_get_proof_premises,
     handle_get_step_premises,
+    handle_visualize_proof_state,
+    handle_visualize_proof_tree,
+    handle_visualize_dependencies,
+    handle_visualize_proof_sequence,
 )
 from poule.storage.errors import IndexNotFoundError, IndexVersionError
 
@@ -347,6 +351,85 @@ TOOL_DEFINITIONS = [
             "required": ["session_id", "step"],
         },
     ),
+    # --- Visualization tools (Spec §4.4) ---
+    Tool(
+        name="visualize_proof_state",
+        description="Render the current proof state as a Mermaid diagram.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "step": {
+                    "type": "integer",
+                    "description": "Step index (default: current step)",
+                },
+                "detail_level": {
+                    "type": "string",
+                    "enum": ["summary", "standard", "detailed"],
+                    "description": "Diagram detail level (default: standard)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="visualize_proof_tree",
+        description="Render a completed proof trace as a Mermaid proof tree diagram.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
+    Tool(
+        name="visualize_dependencies",
+        description="Render a theorem's dependency subgraph as a Mermaid diagram.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Fully qualified declaration name",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum BFS depth (default: 2)",
+                },
+                "max_nodes": {
+                    "type": "integer",
+                    "description": "Maximum nodes in diagram (default: 50)",
+                },
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="visualize_proof_sequence",
+        description="Render step-by-step proof evolution as a sequence of Mermaid diagrams.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID",
+                },
+                "detail_level": {
+                    "type": "string",
+                    "enum": ["summary", "standard", "detailed"],
+                    "description": "Diagram detail level (default: standard)",
+                },
+            },
+            "required": ["session_id"],
+        },
+    ),
 ]
 
 
@@ -447,6 +530,37 @@ class _PipelineFacade:
         return [{"name": r["module"], "decl_count": r["count"]} for r in rows]
 
 
+class _MermaidFacade:
+    """Adapts module-level Mermaid renderer functions into an object interface
+    expected by visualization handler functions."""
+
+    @staticmethod
+    def render_proof_state(state, detail_level=None):
+        from poule.rendering.mermaid_renderer import render_proof_state
+        from poule.rendering.types import DetailLevel
+        if detail_level is None:
+            detail_level = DetailLevel.STANDARD
+        return render_proof_state(state, detail_level)
+
+    @staticmethod
+    def render_proof_tree(trace):
+        from poule.rendering.mermaid_renderer import render_proof_tree
+        return render_proof_tree(trace)
+
+    @staticmethod
+    def render_dependencies(theorem_name, adjacency_list, *, max_depth=2, max_nodes=50):
+        from poule.rendering.mermaid_renderer import render_dependencies
+        return render_dependencies(theorem_name, adjacency_list, max_depth, max_nodes)
+
+    @staticmethod
+    def render_proof_sequence(trace, detail_level=None):
+        from poule.rendering.mermaid_renderer import render_proof_sequence
+        from poule.rendering.types import DetailLevel
+        if detail_level is None:
+            detail_level = DetailLevel.STANDARD
+        return render_proof_sequence(trace, detail_level)
+
+
 class _ServerContext:
     """Context object passed to handler functions."""
 
@@ -457,6 +571,7 @@ class _ServerContext:
         self.expected_version: str | None = None
         self.pipeline: _PipelineFacade | None = None
         self.session_manager: Any = None
+        self.renderer: _MermaidFacade = _MermaidFacade()
 
 
 def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
@@ -550,6 +665,36 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
             session_id=arguments.get("session_id", ""),
             step=arguments.get("step", 0),
         )
+    # Visualization tools (async — return JSON string, wrapped by call_tool)
+    elif name == "visualize_proof_state":
+        return handle_visualize_proof_state(
+            session_id=arguments.get("session_id", ""),
+            session_manager=ctx.session_manager,
+            renderer=ctx.renderer,
+            step=arguments.get("step"),
+            detail_level=arguments.get("detail_level"),
+        )
+    elif name == "visualize_proof_tree":
+        return handle_visualize_proof_tree(
+            session_id=arguments.get("session_id", ""),
+            session_manager=ctx.session_manager,
+            renderer=ctx.renderer,
+        )
+    elif name == "visualize_dependencies":
+        return handle_visualize_dependencies(
+            name=arguments.get("name", ""),
+            search_index=ctx.pipeline,
+            renderer=ctx.renderer,
+            max_depth=arguments.get("max_depth", 2),
+            max_nodes=arguments.get("max_nodes", 50),
+        )
+    elif name == "visualize_proof_sequence":
+        return handle_visualize_proof_sequence(
+            session_id=arguments.get("session_id", ""),
+            session_manager=ctx.session_manager,
+            renderer=ctx.renderer,
+            detail_level=arguments.get("detail_level"),
+        )
     else:
         from poule.server.errors import format_error, PARSE_ERROR
         return format_error(PARSE_ERROR, f"Unknown tool: {name}")
@@ -605,6 +750,14 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
         result = _dispatch_tool(ctx, name, arguments)
         if inspect.isawaitable(result):
             result = await result
+        # Visualization handlers return JSON strings; wrap into dict format
+        if isinstance(result, str):
+            parsed = json.loads(result)
+            is_error = "error" in parsed
+            result = {
+                "content": [{"type": "text", "text": result}],
+                "isError": is_error,
+            }
         # Convert handler dict response to MCP types
         content = result.get("content", [])
         mcp_content = []

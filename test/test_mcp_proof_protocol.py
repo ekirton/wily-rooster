@@ -1,12 +1,12 @@
-"""MCP protocol-level tests for proof interaction tools.
+"""MCP protocol-level tests for proof interaction and visualization tools.
 
 These tests spawn the actual MCP server as a subprocess and communicate
 with it via the MCP SDK's stdio client, verifying that:
-  1. All 12 proof interaction tools are listed in list_tools
+  1. All 23 tools (7 search + 12 proof + 4 visualization) are listed in list_tools
   2. Proof tools are callable and return proper MCP responses
   3. Proof tools work without a search index (Spec §4.5)
 
-Spec: specification/mcp-server.md §4.3, §4.5
+Spec: specification/mcp-server.md §2, §4.3, §4.4, §4.5
 """
 
 from __future__ import annotations
@@ -45,6 +45,13 @@ SEARCH_TOOL_NAMES = [
     "list_modules",
 ]
 
+VISUALIZATION_TOOL_NAMES = [
+    "visualize_proof_state",
+    "visualize_proof_tree",
+    "visualize_dependencies",
+    "visualize_proof_sequence",
+]
+
 
 async def _run_with_session(tmp_path, callback):
     """Spawn the MCP server, initialize a session, run callback, then clean up.
@@ -63,14 +70,14 @@ async def _run_with_session(tmp_path, callback):
 
 
 class TestToolListing:
-    """Verify all 19 tools (7 search + 12 proof) are advertised."""
+    """Verify all 23 tools (7 search + 12 proof + 4 visualization) are advertised."""
 
     @pytest.mark.asyncio
-    async def test_lists_all_19_tools(self, tmp_path):
+    async def test_lists_all_23_tools(self, tmp_path):
         async def check(session):
             result = await session.list_tools()
             tool_names = [t.name for t in result.tools]
-            assert len(tool_names) == 19
+            assert len(tool_names) == 23
         await _run_with_session(tmp_path, check)
 
     @pytest.mark.asyncio
@@ -89,6 +96,15 @@ class TestToolListing:
             tool_names = {t.name for t in result.tools}
             for name in PROOF_TOOL_NAMES:
                 assert name in tool_names, f"Missing proof tool: {name}"
+        await _run_with_session(tmp_path, check)
+
+    @pytest.mark.asyncio
+    async def test_all_visualization_tools_present(self, tmp_path):
+        async def check(session):
+            result = await session.list_tools()
+            tool_names = {t.name for t in result.tools}
+            for name in VISUALIZATION_TOOL_NAMES:
+                assert name in tool_names, f"Missing visualization tool: {name}"
         await _run_with_session(tmp_path, check)
 
     @pytest.mark.asyncio

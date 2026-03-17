@@ -18,12 +18,7 @@
 
 - Write as **direct instructions to Claude** — imperative, second-person ("Search for...", "Open a proof session on...").
 - Do not include frontmatter, metadata, or document headers beyond a brief one-line description of the command.
-- Specify **which tools to use** at each step. Available tool families:
-  - Search MCP tools: `search_by_name`, `search_by_type`, `search_by_structure`, `search_by_symbols`, `get_lemma`, `find_related`, `list_modules`
-  - Proof MCP tools: `open_proof_session`, `close_proof_session`, `list_proof_sessions`, `observe_proof_state`, `get_proof_state_at_step`, `extract_proof_trace`, `submit_tactic`, `step_backward`, `step_forward`, `get_proof_premises`, `get_step_premises`
-  - Vernacular MCP tool: `vernacular_query` (covers Print, Check, About, Locate, Search, Compute, Eval)
-  - Visualization MCP tools: `visualize_proof_state`, `visualize_proof_tree`, `visualize_dependencies`, `visualize_proof_sequence`
-  - Standard Claude Code tools: Read, Write, Edit, Grep, Glob, Bash
+- Specify **which tools to use** at each step. See [doc/MCP_TOOLS.md](../doc/MCP_TOOLS.md) for the full MCP tool inventory. Standard Claude Code tools (Read, Write, Edit, Grep, Glob, Bash) are also available.
 - Structure as **numbered steps** for the primary workflow.
 - Include **decision points** — when to branch, retry, or fall back to alternative strategies.
 - Include an **edge cases** section covering empty input, missing prerequisites, and large-scale operation.

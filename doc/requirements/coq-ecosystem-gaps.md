@@ -2,7 +2,7 @@
 
 ## 1. Ecosystem Overview
 
-The Coq/Rocq ecosystem has several unmet needs that hinder adoption and productivity. The Lean ecosystem has surged ahead with purpose-built tooling for search, proof interaction, and AI integration. Coq's tooling gaps span discoverability, proof interaction, training data extraction, and developer experience. This document captures the full opportunity set and initiative sequencing; per-initiative PRDs contain detailed requirements.
+The Coq/Rocq ecosystem has several unmet needs that hinder adoption and productivity. The Lean ecosystem has surged ahead with purpose-built tooling for search, proof interaction, and AI integration. Coq's tooling gaps span discoverability, proof interaction, training data extraction, and developer experience. This document captures the full opportunity set; per-initiative PRDs contain detailed requirements.
 
 ---
 
@@ -16,29 +16,5 @@ The Coq/Rocq ecosystem has several unmet needs that hinder adoption and producti
 | Proof Search & Automation | High | Interaction Protocol, Search | All Coq users | [proof-search-automation.md](proof-search-automation.md) |
 | Neural Premise Selection | Medium | Extraction | CoqHammer users, researchers | — |
 | Proof Visualization Widgets | High | None | Educators, formalization developers | [proof-visualization-widgets.md](proof-visualization-widgets.md) |
-| CI/CD Tooling | Medium | None | All Coq project maintainers | — |
-| Package Registry | Medium | None (benefits from CI/CD) | All Coq users, especially newcomers | — |
-
----
-
-## 3. Initiative Sequencing
-
-```
-Phase 1 (Complete):
-  Semantic Lemma Search          -- no dependencies; solves daily pain
-
-Phase 2 (Active):
-  Proof Interaction Protocol     -- standalone value; enables Phases 3 and 4
-  Proof Visualization Widgets    -- independent; MCP + Mermaid approach
-
-Phase 3 (AI Infrastructure):
-  Training Data Extraction       -- depends on Interaction Protocol
-
-Phase 4 (AI Applications):
-  Proof Search & Automation      -- depends on Interaction Protocol and Semantic Search; optionally consumes Extraction
-  Neural Premise Selection       -- depends on Extraction
-
-Phase 5 (Ecosystem Polish):
-  CI/CD Tooling                  -- independent; enables Package Registry
-  Package Registry               -- benefits from CI/CD Tooling
-```
+| CI/CD Tooling | Medium | None | All Coq project maintainers | — (out of scope) |
+| Package Registry | Medium | None (benefits from CI/CD) | All Coq users, especially newcomers | — (out of scope) |

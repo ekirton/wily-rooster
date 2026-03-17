@@ -2,13 +2,13 @@
 
 Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context and initiative sequencing.
 
-Lineage: Phase 2 (Proof Interaction Protocol) identified proof trace export (R2-P2-1) and benchmark generation (R2-P2-2) as deferred capabilities. This initiative promotes and expands those capabilities into a complete extraction pipeline.
+Lineage: The Proof Interaction Protocol identified proof trace export (R2-P2-1) and benchmark generation (R2-P2-2) as deferred capabilities. This initiative promotes and expands those capabilities into a complete extraction pipeline.
 
 ## 1. Business Goals
 
 Coq/Rocq has no modern training data extraction infrastructure. CoqGym is frozen at 71K theorems on Coq 8.9 (2019). LeanDojo v2 provides 122K+ theorems with per-tactic premise annotations, incremental tracing, and continuously updated benchmarks for Lean 4. This infrastructure gap is the root cause of Coq's AI tooling lag: every Coq-focused AI project must independently solve the data problem, leading to duplicated effort, incompatible datasets, and results that cannot be reproduced or compared.
 
-This initiative delivers a training data extraction pipeline for Coq/Rocq that processes proof developments at project scale, producing structured, versioned datasets of proof traces with premise annotations. It builds on the Proof Interaction Protocol (Phase 2) and establishes the data foundation required by the LLM Copilot and Neural Premise Selection initiatives (Phase 4).
+This initiative delivers a training data extraction pipeline for Coq/Rocq that processes proof developments at project scale, producing structured, versioned datasets of proof traces with premise annotations. It builds on the Proof Interaction Protocol and establishes the data foundation required by the LLM Copilot and Neural Premise Selection initiatives.
 
 **Success metrics:**
 - Successfully extract proof traces for ≥ 95% of provable theorems in the Coq standard library
@@ -25,7 +25,7 @@ This initiative delivers a training data extraction pipeline for Coq/Rocq that p
 | Segment | Needs | Priority |
 |---------|-------|----------|
 | AI researchers | Large-scale, structured proof trace datasets with premise annotations for training tactic prediction, premise selection, and proof synthesis models | Primary |
-| This project's Phase 4 initiatives (LLM Copilot, Neural Premise Selection) | Proof traces for fine-tuning and few-shot prompting; (goal, premises_used) pairs for training retrieval models | Primary |
+| LLM Copilot, Neural Premise Selection | Proof traces for fine-tuning and few-shot prompting; (goal, premises_used) pairs for training retrieval models | Primary |
 | Tool builders | Reproducible, versioned datasets for benchmarking and evaluation of Coq-focused AI tools | Secondary |
 | Coq library maintainers | Dataset quality reports identifying proofs that fail extraction, enabling library hygiene improvements | Tertiary |
 
@@ -112,12 +112,12 @@ Cross-references:
 - Support for standard-Ltac and ssreflect-based Coq projects
 
 **Out of scope:**
-- Model training, fine-tuning, or evaluation (Phase 4)
+- Model training, fine-tuning, or evaluation
 - Tokenizer or embedding development for extracted data
 - Real-time extraction during editing or interactive proof development
 - Proof synthesis or automated theorem proving
 - Web interface or API server for dataset access
-- Neural premise selection model development (Phase 4)
+- Neural premise selection model development
 - Tactic suggestion or auto-completion
 - Cross-language extraction (Lean, Isabelle)
 - MCP server exposure (extraction is a batch pipeline, not an interactive tool)

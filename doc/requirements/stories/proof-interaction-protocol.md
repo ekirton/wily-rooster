@@ -256,7 +256,7 @@ Derived from [doc/requirements/proof-interaction-protocol.md](../proof-interacti
 **Stability:** Stable
 
 **Acceptance criteria:**
-- GIVEN a valid MCP configuration WHEN the server starts via stdio transport THEN it exposes all search tools (from Phase 1) and all proof interaction tools
+- GIVEN a valid MCP configuration WHEN the server starts via stdio transport THEN it exposes all search tools and all proof interaction tools
 - GIVEN a connected server WHEN the tool list is requested THEN proof interaction tools include at minimum: open-session, close-session, list-sessions, observe-state, submit-tactic, step-backward, step-forward, extract-trace, get-premises
 - GIVEN a connected server WHEN any proof interaction tool is called THEN it returns well-formed MCP tool responses
 

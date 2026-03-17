@@ -86,5 +86,5 @@ The critical ecosystem gap: no standardized protocol for external tools to obser
 **Out of scope:**
 - Real-time tactic auto-completion or suggestion
 - Proof synthesis or automated theorem proving
-- Neural premise selection (Phase 4)
+- Neural premise selection
 - Training data export in specialized ML formats (deferred to P2)

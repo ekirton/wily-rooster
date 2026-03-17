@@ -2,11 +2,11 @@
 
 Cross-reference: see [coq-ecosystem-gaps.md](coq-ecosystem-gaps.md) for ecosystem context and initiative sequencing.
 
-Lineage: Phase 4 initiative. Depends on Proof Interaction Protocol (Phase 2) and Training Data Extraction (Phase 3). Optionally consumes Semantic Lemma Search (Phase 1) for premise-augmented candidate generation.
+Lineage: Depends on Proof Interaction Protocol and Training Data Extraction. Optionally consumes Semantic Lemma Search for premise-augmented candidate generation.
 
 ## 1. Business Goals
 
-Claude Code, combined with the Proof Interaction Protocol (Phase 2) and Semantic Lemma Search (Phase 1), already functions as an LLM copilot for Coq/Rocq: it observes proof states, reasons about tactic choices, retrieves relevant lemmas, explains proof strategies, and submits tactics — all within the conversational workflow. What Claude Code cannot do efficiently is *algorithmic proof search*: exploring a tree of tactic sequences with systematic backtracking, state caching, and diversity pruning in a tight loop. A conversational round-trip takes seconds per tactic; a dedicated search tool can evaluate hundreds of candidates in the same time.
+Claude Code, combined with the Proof Interaction Protocol and Semantic Lemma Search, already functions as an LLM copilot for Coq/Rocq: it observes proof states, reasons about tactic choices, retrieves relevant lemmas, explains proof strategies, and submits tactics — all within the conversational workflow. What Claude Code cannot do efficiently is *algorithmic proof search*: exploring a tree of tactic sequences with systematic backtracking, state caching, and diversity pruning in a tight loop. A conversational round-trip takes seconds per tactic; a dedicated search tool can evaluate hundreds of candidates in the same time.
 
 This initiative delivers proof search and automation tools that Claude Code orchestrates via MCP. These tools handle the computationally intensive, algorithmic aspects of proof automation — tree search, batch admit filling, and few-shot context retrieval — while Claude Code continues to handle the reasoning-intensive aspects: strategy selection, tactic explanation, and interactive proof guidance.
 
@@ -82,7 +82,7 @@ Cross-references:
 | R4-P1-1 | Interleave LLM-generated tactic candidates with symbolic automation tactics (CoqHammer, `auto`, `omega`, `lia`) at each search node, so that mechanical sub-goals are discharged by solvers rather than consuming LLM budget |
 | R4-P1-2 | Apply diversity-aware candidate selection during search to filter or de-prioritize near-duplicate tactic candidates before verification |
 | R4-P1-3 | Support configurable search depth and breadth limits (maximum tactic sequence length, maximum candidates per node) |
-| R4-P1-4 | Retrieve similar proof states and their successful tactics from extracted training data (Phase 3) and include them as few-shot context for tactic candidate generation |
+| R4-P1-4 | Retrieve similar proof states and their successful tactics from extracted training data and include them as few-shot context for tactic candidate generation |
 | R4-P1-5 | Provide a fill-admits tool that, given a proof script file, identifies all `admit` calls, invokes proof search on each, and returns the script with successfully filled admits replaced by verified tactic sequences |
 | R4-P1-6 | Expose fill-admits as an MCP tool compatible with Claude Code (stdio transport) |
 | R4-P1-7 | Support sketch-then-prove: accept a proof script with `admit` stubs as intermediate subgoals, invoke proof search independently on each stub, and return the combined result |

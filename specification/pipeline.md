@@ -39,11 +39,13 @@ The system shall define a `PipelineContext` that holds:
 | `declaration_symbols` | `dict[int, set[str]]` | At context creation (derived from inverted index) |
 | `declaration_node_counts` | `dict[int, int]` | At context creation (from declarations table) |
 | `parser` | `CoqParser` | Lazily on first structural/type query |
+| `neural_encoder` | `NeuralEncoder` or null | At context creation (if model checkpoint available) |
+| `embedding_index` | `EmbeddingIndex` or null | At context creation (if embeddings available and model hash matches) |
 
 #### create_context(db_path)
 
 - REQUIRES: `db_path` points to a valid index database.
-- ENSURES: Opens `IndexReader`, loads all in-memory data, returns a ready `PipelineContext`. Parser is not started until needed.
+- ENSURES: Opens `IndexReader`, loads all in-memory data, returns a ready `PipelineContext`. Parser is not started until needed. Neural channel is initialized if a model checkpoint is available, embeddings exist in the database, and the stored model hash matches the checkpoint — otherwise `neural_encoder` and `embedding_index` are null (neural channel unavailable). See [neural-retrieval.md](neural-retrieval.md) §4.4 for availability conditions.
 
 ### 4.2 CoqParser Protocol
 
@@ -86,8 +88,9 @@ Algorithm:
 2. Run WL screening + structural scoring → structural ranked list
 3. `extract_consts(tree)` → query symbols; run `mepo_select(symbols, ...)` → symbol ranked list
 4. `fts_query(type_expr)` → FTS5 query; `fts_search(query, limit=limit, reader)` → lexical ranked list
-5. `rrf_fuse([structural, symbol, lexical], k=60)` → final ranked list
-6. Take top `limit`, construct `SearchResult` objects
+5. If `ctx.neural_encoder` is not null and `ctx.embedding_index` is not null: `neural_retrieve(ctx, type_expr, limit=50)` → neural ranked list
+6. `rrf_fuse([structural, symbol, lexical, neural?], k=60)` → final ranked list (neural omitted if unavailable)
+7. Take top `limit`, construct `SearchResult` objects
 
 Note: `extract_consts` at query time is equivalent to the MePo channel's `extract_symbols`. Reuse the same function.
 

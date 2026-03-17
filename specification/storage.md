@@ -37,6 +37,7 @@ The database shall contain 6 tables as defined in the architecture:
 - `symbol_freq` — global symbol frequency counts
 - `index_meta` — key-value metadata
 - `declarations_fts` — FTS5 virtual table (content-synced with `declarations`)
+- `embeddings` — neural premise embedding vectors (optional, populated when neural model is available)
 
 FTS5 configuration: The stemming tokenizer shall wrap the base tokenizer (Porter around Unicode61). BM25 column weights: `name=10.0`, `statement=1.0`, `module=5.0`.
 
@@ -67,6 +68,11 @@ Declarations and their WL vectors shall be co-inserted in the same batch transac
 
 - REQUIRES: `batch` is a list of dependency edge row data. Both `src` and `dst` reference existing declarations.
 - ENSURES: All edges are inserted. Self-loops (`src == dst`) are rejected.
+
+#### insert_embeddings(batch)
+
+- REQUIRES: `batch` is a list of `(decl_id, vector_blob)` pairs. Each `decl_id` references an existing declaration. Each `vector_blob` is exactly 3,072 bytes (768 × float32).
+- ENSURES: All embeddings are inserted into the `embeddings` table.
 
 #### insert_symbol_freq(entries)
 
@@ -151,6 +157,16 @@ The `IndexReader` manages the read path during online queries.
 
 - REQUIRES: `prefix` is a string (may be empty).
 - ENSURES: Returns `Module` entries for all modules whose name starts with `prefix`, with declaration counts.
+
+#### load_embeddings()
+
+- REQUIRES: Database is open and valid.
+- ENSURES: If the `embeddings` table exists and contains rows, returns a tuple `(embedding_matrix, decl_id_map)` where `embedding_matrix` is a contiguous float32 array of shape `[N, 768]` and `decl_id_map` is an integer array of length N mapping row indices to declaration IDs. If the table does not exist or is empty, returns `(None, None)`.
+
+#### get_meta(key)
+
+- REQUIRES: Database is open. `key` is a string.
+- ENSURES: Returns the value for the given key from `index_meta`, or `None` if the key does not exist.
 
 #### close()
 

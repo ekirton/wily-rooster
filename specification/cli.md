@@ -12,7 +12,7 @@ Define the CLI layer that accepts user commands from the terminal, validates inp
 
 ## 2. Scope
 
-**In scope**: 7 search subcommands, 1 proof replay subcommand, 3 extraction subcommands, shared option handling, input validation, human-readable and JSON output formatting, index state checks, error reporting.
+**In scope**: 7 search subcommands, 1 proof replay subcommand, 3 extraction subcommands, 6 neural subcommands, shared option handling, input validation, human-readable and JSON output formatting, index state checks, error reporting.
 
 **Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), MCP protocol handling (owned by MCP server), extraction logic (owned by extraction-campaign), output serialization (owned by extraction-output).
 
@@ -298,6 +298,102 @@ JSON (`--json`): a single QualityReport JSON object (compact format).
 > **When** `quality-report extraction.jsonl --json` is run
 > **Then** a QualityReport JSON object is printed to stdout and exit code is 0
 
+### 4.10 train(traces, db, output, hyperparams)
+
+- REQUIRES: `traces` is a non-empty list of paths to JSON Lines extraction output files. `db` points to a valid index database. `output` is a writable path.
+- ENSURES: Validates training data. Loads dataset with train/val/test split. Trains a bi-encoder model. Saves the best checkpoint to `output`. Prints training progress (epoch, loss, validation R@32) to stderr. Exits with code 0.
+- Delegates to: `TrainingDataValidator.validate`, `TrainingDataLoader.load`, `BiEncoderTrainer.train`.
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--db` | path | required | File must exist |
+| `--output` | path | required | Parent directory must exist |
+| `--epochs` | integer | 20 | Must be positive |
+| `--batch-size` | integer | 256 | Must be positive |
+| `--lr` | float | 2e-5 | Must be positive |
+
+> **Given** valid extraction files and index database
+> **When** `train stdlib.jsonl --db index.db --output model.pt` is run
+> **Then** training progress is printed to stderr, model checkpoint is saved, exit code is 0
+
+> **Given** an extraction file with < 1,000 valid training pairs
+> **When** `train small.jsonl --db index.db --output model.pt` is run
+> **Then** `"Insufficient training data"` is printed to stderr and exit code is 1
+
+### 4.11 fine-tune(checkpoint, data, db, output, hyperparams)
+
+- REQUIRES: `checkpoint` points to a valid training checkpoint. `data` points to a JSON Lines extraction file. `db` points to a valid index database. `output` is a writable path.
+- ENSURES: Fine-tunes the pre-trained model on the project data. Saves the fine-tuned checkpoint. Exits with code 0.
+- Delegates to: `BiEncoderTrainer.fine_tune`.
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--checkpoint` | path | required | File must exist |
+| `--data` | path | required | File must exist |
+| `--db` | path | required | File must exist |
+| `--output` | path | required | Parent directory must exist |
+| `--epochs` | integer | 10 | Must be positive |
+| `--lr` | float | 5e-6 | Must be positive |
+
+### 4.12 evaluate(checkpoint, test_data, db)
+
+- REQUIRES: `checkpoint` points to a valid model checkpoint. `test_data` points to a JSON Lines extraction file. `db` points to a valid index database.
+- ENSURES: Prints an EvaluationReport (R@1, R@10, R@32, MRR, test count, mean latency) to stdout. Prints a warning to stderr if R@32 < 50%. Exits with code 0.
+- Delegates to: `RetrievalEvaluator.evaluate`.
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--checkpoint` | path | required | File must exist |
+| `--test-data` | path | required | File must exist |
+| `--db` | path | required | File must exist |
+| `--json` | flag | false | — |
+
+> **Given** a trained model and test data
+> **When** `evaluate --checkpoint model.pt --test-data test.jsonl --db index.db` is run
+> **Then** retrieval metrics are printed to stdout and exit code is 0
+
+### 4.13 compare(checkpoint, test_data, db)
+
+- REQUIRES: Same as `evaluate`.
+- ENSURES: Prints a ComparisonReport (neural R@32, symbolic R@32, union R@32, relative improvement, overlap, exclusivity) to stdout. Prints a warning to stderr if relative improvement < 15%. Exits with code 0.
+- Delegates to: `RetrievalEvaluator.compare`.
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--checkpoint` | path | required | File must exist |
+| `--test-data` | path | required | File must exist |
+| `--db` | path | required | File must exist |
+| `--json` | flag | false | — |
+
+### 4.14 quantize(checkpoint, output)
+
+- REQUIRES: `checkpoint` points to a valid PyTorch training checkpoint. `output` is a writable path.
+- ENSURES: Exports to ONNX, applies INT8 quantization, validates quality (max cosine distance < 0.02), writes ONNX model to `output`. Exits with code 0.
+- Delegates to: `ModelQuantizer.quantize`.
+
+| Option | Type | Default | Validation |
+|--------|------|---------|------------|
+| `--checkpoint` | path | required | File must exist |
+| `--output` | path | required | Parent directory must exist |
+
+> **Given** a valid model checkpoint
+> **When** `quantize --checkpoint model.pt --output model.onnx` is run
+> **Then** an INT8 ONNX model is written and exit code is 0
+
+> **Given** a model that fails quantization validation (cosine distance ≥ 0.02)
+> **When** `quantize --checkpoint model.pt --output model.onnx` is run
+> **Then** the max cosine distance is printed to stderr and exit code is 1
+
+### 4.15 validate-training-data(traces)
+
+- REQUIRES: `traces` is a non-empty list of paths to JSON Lines extraction output files.
+- ENSURES: Prints a ValidationReport to stdout. Exits with code 0 (even when warnings are present — validation warnings are informational, not failures).
+- Delegates to: `TrainingDataValidator.validate`.
+
+> **Given** extraction files with 50,000 steps
+> **When** `validate-training-data stdlib.jsonl mathcomp.jsonl` is run
+> **Then** a validation report is printed to stdout and exit code is 0
+
 ## 5. Error Specification
 
 | Condition | Exit code | stderr message |
@@ -318,6 +414,11 @@ JSON (`--json`): a single QualityReport JSON object (compact format).
 | Invalid extraction input (extract-deps, quality-report) | 1 | `Invalid JSON Lines at line {n}: {details}` |
 | Checkpoint corrupted (extract --resume) | 0 | `Warning: checkpoint corrupted, falling back to full extraction.` |
 | Mutually exclusive flags (extract) | 2 | `--incremental and --resume cannot be used together.` |
+| Model checkpoint not found (evaluate, compare, quantize, fine-tune) | 1 | `Model checkpoint not found: {path}` |
+| Insufficient training data (train, fine-tune) | 1 | `Insufficient training data: {n} pairs found, minimum 1,000 required.` |
+| GPU out of memory (train, fine-tune) | 1 | `GPU out of memory. Try reducing --batch-size (current: {n}).` |
+| Quantization validation failure (quantize) | 1 | `Quantization quality check failed: max cosine distance {d:.4f} >= 0.02 threshold.` |
+| Training data file not found (train, fine-tune, validate-training-data) | 1 | `Training data file not found: {path}` |
 
 Errors are always printed to stderr. Successful output is always printed to stdout. This separation supports piping and redirection.
 
@@ -455,6 +556,63 @@ $ poule quality-report stdlib.jsonl --json
 {"premise_coverage":0.87,"proof_length_distribution":{"min":1,"max":342,"mean":12.4,"median":8.0,"p25":4.0,"p75":16.0,"p95":45.0},"tactic_vocabulary":[{"tactic":"apply","count":24500}],"per_project":[{"project_id":"coq-stdlib","premise_coverage":0.89,"proof_length_distribution":{"min":1,"max":200,"mean":10.2,"median":7.0,"p25":3.0,"p75":14.0,"p95":38.0},"theorem_count":4500}]}
 ```
 
+### train (success)
+
+```
+$ poule train stdlib.jsonl mathcomp.jsonl --db index.db --output model.pt
+Validating training data...
+  35,000 training pairs, 4,200 unique premises — OK
+Training bi-encoder (batch_size=256, lr=2e-5, epochs=20)...
+  Epoch 1/20: loss=4.21, val_R@32=0.18
+  Epoch 2/20: loss=3.14, val_R@32=0.32
+  ...
+  Epoch 12/20: loss=1.42, val_R@32=0.54 (best)
+  Epoch 15/20: early stopping (no improvement for 3 epochs)
+Model saved to model.pt (best val_R@32=0.54)
+$ echo $?
+0
+```
+
+### evaluate (JSON)
+
+```
+$ poule evaluate --checkpoint model.pt --test-data test.jsonl --db index.db --json
+{"recall_at_1":0.22,"recall_at_10":0.41,"recall_at_32":0.52,"mrr":0.35,"test_count":4500,"mean_premises_per_state":2.3,"mean_query_latency_ms":12.4}
+```
+
+### compare
+
+```
+$ poule compare --checkpoint model.pt --test-data test.jsonl --db index.db
+Neural vs. Symbolic Comparison
+==============================
+Neural R@32:    0.52
+Symbolic R@32:  0.38
+Union R@32:     0.55
+Improvement:    44.7%
+Overlap:        37.5%
+Neural only:    25.0%
+Symbolic only:  37.5%
+```
+
+### validate-training-data
+
+```
+$ poule validate-training-data stdlib.jsonl
+Training Data Validation
+========================
+Total pairs:     35,000
+Empty premises:  15,000 (30.0%)
+Malformed:       0
+Unique premises: 4,200
+Unique states:   32,100
+
+Top premises:
+  Coq.Init.Logic.eq_refl          1,200
+  Coq.Arith.PeanoNat.Nat.add_0_r    850
+  ...
+```
+
 ## 8. Language-Specific Notes (Python)
 
 - Use `click` for argument parsing (consistent with the existing extraction CLI).
@@ -466,4 +624,6 @@ $ poule quality-report stdlib.jsonl --json
 - For proof replay: use `SessionManager` from `poule.session.manager`, `serialize_proof_trace` and `serialize_premise_annotation` from `poule.serialization.serialize`.
 - For extraction: use `ExtractionCampaignOrchestrator` from `poule.extraction.campaign`, `extract_dependency_graph` from `poule.extraction.dependency_graph`, `generate_quality_report` from `poule.extraction.reporting`.
 - Use `asyncio.run()` to bridge Click's sync execution model to the async `SessionManager` API.
+- For neural subcommands: use `TrainingDataValidator`, `TrainingDataLoader`, `BiEncoderTrainer`, `RetrievalEvaluator`, `ModelQuantizer` from `poule.neural.training`.
+- Neural subcommands do not require `PipelineContext` (except `compare`, which needs the symbolic retrieval pipeline for comparison).
 - Package location: `src/poule/cli/`.

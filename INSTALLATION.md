@@ -2,139 +2,102 @@
 
 ## Requirements
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- Coq/Rocq 8.19+ with coq-lsp or SerAPI
+- [Docker](https://docs.docker.com/get-docker/)
+- An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
 
-## Coq Toolchain
+## Setup
 
-Install [opam](https://opam.ocaml.org/), then:
-
-```bash
-opam init
-opam install coq coq-lsp
-opam repo add coq-released https://coq.inria.fr/opam/released
-opam install coq-mathcomp-ssreflect   # optional, for MathComp indexing
-eval $(opam env)
-```
-
-See the [opam install guide](https://opam.ocaml.org/doc/Install.html) for platform-specific opam installation (macOS via Homebrew, Linux distros, WSL2).
-
-## Python Package
+Clone the repository and build the container:
 
 ```bash
 git clone https://github.com/ekirton/poule.git
 cd poule
-uv sync
 ```
 
-## Docker
+The first time you run `poule`, it builds the Docker image and downloads the Coq search index automatically. No local Coq, Python, or opam installation is needed — everything runs inside the container.
 
-The Docker image bundles Coq, Python, Claude Code, and all dependencies — no local Coq or opam installation required.
+## Usage
+
+From any Coq project directory:
 
 ```bash
-git clone https://github.com/ekirton/poule.git
-cd poule
-docker build -t poule .
+cd ~/Projects/my-coq-project
+poule
 ```
 
-Download the prebuilt index into a local data directory:
+This starts a shell inside the container with the Coq toolchain, Poule MCP server, and Claude Code all available. Run `claude` to start Claude Code:
 
 ```bash
-mkdir -p data
-docker run --rm -v ./data:/data --entrypoint uv poule \
-  run python -m poule.cli download-index --output /data/index.db
+[poule][main][~/Projects/my-coq-project]$ claude
 ```
 
-The image supports two usage modes:
-
-**MCP server only** — run Claude Code on the host and connect to the containerized server. Add to `~/.claude/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "coq-search": {
-      "command": "docker",
-      "args": ["run", "--rm", "-i", "-v", "/path/to/data:/data", "poule"]
-    }
-  }
-}
-```
-
-**Fully containerized** — run Claude Code inside the container alongside the MCP server:
+You can also pass commands directly:
 
 ```bash
-docker run --rm -it \
-  -e ANTHROPIC_API_KEY \
-  -v ./data:/data \
-  --entrypoint claude \
-  poule
+poule claude                     # Start Claude Code directly
+poule coqc --version             # Run a command in the container
 ```
 
-This starts Claude Code with the Coq toolchain, MCP server, and index all available inside the container. Configure the MCP server in the container's Claude Code settings (`/claude mcp add`) or mount a config file:
+## What happens on first run
+
+1. The Docker image is built (Coq 8.19.2, coq-lsp, Python 3.11, Claude Code)
+2. A persistent home directory is created at `~/poule-home/`
+3. The Coq search index is downloaded to `~/poule-home/data/`
+4. Claude Code MCP settings are auto-configured
+
+Subsequent runs skip all of these steps and start immediately.
+
+## Persistent home directory
+
+Poule stores all persistent state in `~/poule-home/`:
+
+```
+~/poule-home/
+├── .claude/          # Claude Code settings, MCP config, auth
+├── .ssh/             # SSH keys (copy yours here if needed)
+├── .gitconfig        # Git configuration
+├── .zsh_history      # Shell history
+├── .zshrc            # Shell configuration
+└── data/
+    └── index.db      # Coq search index
+```
+
+Shell history, Claude Code settings, and authentication tokens persist across sessions. To set up git and SSH inside the container, copy your existing config:
 
 ```bash
-docker run --rm -it \
-  -e ANTHROPIC_API_KEY \
-  -v ./data:/data \
-  -v ./mcp.json:/root/.claude/mcp.json:ro \
-  --entrypoint claude \
-  poule
+cp ~/.gitconfig ~/poule-home/.gitconfig
+cp -r ~/.ssh ~/poule-home/.ssh
 ```
 
-Where `mcp.json` points to the in-container paths:
+## Adding the launcher to your PATH
 
-```json
-{
-  "mcpServers": {
-    "coq-search": {
-      "command": "uv",
-      "args": ["run", "--project", "/app", "python", "-m", "poule.server", "--db", "/data/index.db"]
-    }
-  }
-}
-```
-
-## Getting the Search Index
-
-**Option A — Download the prebuilt index** (no Coq installation required):
+Add the `bin/` directory to your PATH so you can run `poule` from anywhere:
 
 ```bash
-uv run python -m poule.cli download-index
+# Add to ~/.zshrc or ~/.bashrc
+export PATH="/path/to/poule/bin:$PATH"
+```
+
+## Updating Claude Code
+
+Claude Code updates are applied automatically: when a new version is detected, the image rebuilds on exit. To update immediately:
+
+```bash
+poule --rebuild              # Update Claude CLI (uses cache)
+poule --rebuild-all          # Full rebuild from scratch
+```
+
+## Updating the search index
+
+To download a newer version of the search index:
+
+```bash
+rm ~/poule-home/data/index.db
+poule   # Triggers automatic re-download
 ```
 
 To also download the neural premise selection model:
 
 ```bash
-uv run python -m poule.cli download-index --include-model
+poule uv run --project /app python -m poule.cli download-index --output ~/data/index.db --include-model
 ```
-
-You can also download manually from [GitHub Releases](https://github.com/ekirton/poule/releases).
-
-**Option B — Build from source** (requires Coq toolchain):
-
-```bash
-uv run python -m poule.extraction --target stdlib+mathcomp --db index.db --progress
-```
-
-## Configure Claude Code
-
-Add to `~/.claude/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "coq-search": {
-      "command": "uv",
-      "args": ["run", "--project", "/path/to/poule", "python", "-m", "poule.server", "--db", "/path/to/poule/index.db"]
-    },
-    "mermaid": {
-      "command": "npx",
-      "args": ["-y", "@mermaidchart/mcp-server"]
-    }
-  }
-}
-```
-
-Replace `/path/to/poule` with the absolute path to your clone.

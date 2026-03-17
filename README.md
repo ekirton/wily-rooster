@@ -39,9 +39,20 @@ Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides m
 - Proof state, proof tree, dependency subgraph, and step-by-step sequence diagrams
 - Generated as Mermaid syntax, rendered via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server)
 
-## Installation
+## Quick Start
 
-See [INSTALLATION.md](INSTALLATION.md) for requirements, setup (pip, Docker), index download, and Claude Code configuration.
+Requires [Docker](https://docs.docker.com/get-docker/). From any Coq project directory:
+
+```bash
+git clone https://github.com/ekirton/poule.git
+export PATH="/path/to/poule/bin:$PATH"
+
+cd ~/Projects/my-coq-project
+poule       # Builds image, downloads index, starts shell
+claude      # Inside the container — start Claude Code
+```
+
+On first run, `poule` builds the Docker image (Coq 8.19.2, coq-lsp, Claude Code) and downloads the search index. Everything runs inside the container — no local Coq or Python installation required. See [INSTALLATION.md](INSTALLATION.md) for details.
 
 ## Use with Claude Code
 
@@ -83,15 +94,18 @@ For the full list of MCP tools and their parameters, see [MCP Tools Reference](d
 
 ### CLI
 
-All search and proof replay features are also available as standalone commands for scripting or quick lookups:
+All search and proof replay features are also available as standalone commands inside the container:
 
 ```bash
-uv run python -m poule.cli search-by-name --db index.db "Nat.add_comm"
-uv run python -m poule.cli search-by-type --db index.db "nat -> nat -> nat"
-uv run python -m poule.cli replay-proof examples/arith.v add_comm --json --premises
+poule uv run --project /app python -m poule.cli search-by-name --db /data/index.db "Nat.add_comm"
+poule uv run --project /app python -m poule.cli search-by-type --db /data/index.db "nat -> nat -> nat"
 ```
 
-Run `uv run python -m poule.cli --help` for the full command list.
+Or from the interactive shell:
+
+```bash
+uv run --project /app python -m poule.cli --help
+```
 
 ## Development
 

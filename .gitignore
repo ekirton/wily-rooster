@@ -9,6 +9,7 @@ dist/
 build/
 .venv/
 .coverage
+coverage.xml
 
 # Generated artifacts
 index.db

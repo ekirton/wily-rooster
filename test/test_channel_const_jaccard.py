@@ -1,7 +1,7 @@
 """TDD tests for the Const Jaccard channel.
 
 Tests written BEFORE implementation. Implementation will live in
-src/wily_rooster/channels/const_jaccard.py.
+src/poule/channels/const_jaccard.py.
 
 Specification: specification/channel-const-jaccard.md
 """
@@ -21,7 +21,7 @@ class TestJaccardSimilarity:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from wily_rooster.channels.const_jaccard import jaccard_similarity
+        from poule.channels.const_jaccard import jaccard_similarity
 
         self.jaccard_similarity = jaccard_similarity
 
@@ -75,28 +75,28 @@ class TestExtractConsts:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from wily_rooster.channels.const_jaccard import extract_consts
+        from poule.channels.const_jaccard import extract_consts
 
         self.extract_consts = extract_consts
 
     def _leaf(self, label):
-        from wily_rooster.models.tree import TreeNode
+        from poule.models.tree import TreeNode
 
         return TreeNode(label=label, children=[])
 
     def _node(self, label, children):
-        from wily_rooster.models.tree import TreeNode
+        from poule.models.tree import TreeNode
 
         return TreeNode(label=label, children=children)
 
     def _tree(self, root):
-        from wily_rooster.models.tree import ExprTree, node_count as _nc
+        from poule.models.tree import ExprTree, node_count as _nc
 
         return ExprTree(root=root, node_count=_nc(root))
 
     def test_lconst_nodes_extracted(self):
         """Tree with LConst nodes -> their FQNs are in the result set."""
-        from wily_rooster.models.labels import LConst, LApp
+        from poule.models.labels import LConst, LApp
 
         root = self._node(
             LApp(),
@@ -110,7 +110,7 @@ class TestExtractConsts:
 
     def test_lind_nodes_extracted(self):
         """Tree with LInd node -> its FQN is in the result set."""
-        from wily_rooster.models.labels import LInd
+        from poule.models.labels import LInd
 
         root = self._leaf(LInd("Coq.Init.Datatypes.nat"))
         result = self.extract_consts(self._tree(root))
@@ -118,7 +118,7 @@ class TestExtractConsts:
 
     def test_lconstruct_extracts_parent_inductive_fqn(self):
         """LConstruct contributes the parent inductive FQN (name field)."""
-        from wily_rooster.models.labels import LConstruct
+        from poule.models.labels import LConstruct
 
         root = self._leaf(LConstruct("Coq.Init.Datatypes.nat", 0))
         result = self.extract_consts(self._tree(root))
@@ -126,7 +126,7 @@ class TestExtractConsts:
 
     def test_mixed_labels_only_constants(self):
         """Only LConst, LInd, LConstruct contribute; LApp, LProd, LRel do not."""
-        from wily_rooster.models.labels import LApp, LProd, LConst, LRel
+        from poule.models.labels import LApp, LProd, LConst, LRel
 
         inner = self._node(
             LProd(),
@@ -141,7 +141,7 @@ class TestExtractConsts:
 
     def test_duplicate_constants_collapsed(self):
         """Duplicate constant references -> set with no duplicates."""
-        from wily_rooster.models.labels import LConst, LApp
+        from poule.models.labels import LConst, LApp
 
         root = self._node(
             LApp(),
@@ -155,9 +155,9 @@ class TestExtractConsts:
 
     def test_no_constants_returns_empty_set(self):
         """Tree with no constant/inductive/constructor nodes -> empty set."""
-        from wily_rooster.models.labels import LProd, LRel
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.models.labels import LSort
+        from poule.models.labels import LProd, LRel
+        from poule.models.enums import SortKind
+        from poule.models.labels import LSort
 
         root = self._node(
             LProd(),
@@ -171,7 +171,7 @@ class TestExtractConsts:
 
     def test_all_three_label_types_combined(self):
         """Tree with LConst, LInd, and LConstruct -> union of all names."""
-        from wily_rooster.models.labels import LApp, LConst, LInd, LConstruct
+        from poule.models.labels import LApp, LConst, LInd, LConstruct
 
         children = [
             self._leaf(LConst("Nat.add")),
@@ -186,7 +186,7 @@ class TestExtractConsts:
 
     def test_deeply_nested_constants_collected(self):
         """Constants at various depths are all collected."""
-        from wily_rooster.models.labels import LApp, LConst
+        from poule.models.labels import LApp, LConst
 
         # Build a chain: LApp(LApp(LConst(a), LConst(b)), LConst(c))
         inner = self._node(
@@ -211,31 +211,31 @@ class TestConstJaccardRank:
 
     @pytest.fixture(autouse=True)
     def _import(self):
-        from wily_rooster.channels.const_jaccard import const_jaccard_rank
+        from poule.channels.const_jaccard import const_jaccard_rank
 
         self.const_jaccard_rank = const_jaccard_rank
 
     def _leaf(self, label):
-        from wily_rooster.models.tree import TreeNode
+        from poule.models.tree import TreeNode
 
         return TreeNode(label=label, children=[])
 
     def _node(self, label, children):
-        from wily_rooster.models.tree import TreeNode
+        from poule.models.tree import TreeNode
 
         return TreeNode(label=label, children=children)
 
     def _tree(self, root):
-        from wily_rooster.models.tree import ExprTree, node_count as _nc
+        from poule.models.tree import ExprTree, node_count as _nc
 
         return ExprTree(root=root, node_count=_nc(root))
 
     def _query_tree_with_consts(self, names: list[str]):
         """Build a simple tree containing LConst leaves for each name."""
-        from wily_rooster.models.labels import LConst, LApp
+        from poule.models.labels import LConst, LApp
 
         if len(names) == 0:
-            from wily_rooster.models.labels import LRel
+            from poule.models.labels import LRel
 
             return self._tree(self._leaf(LRel(0)))
         if len(names) == 1:

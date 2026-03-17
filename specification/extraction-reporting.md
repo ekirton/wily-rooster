@@ -275,4 +275,4 @@ Failures:
 - Use `re.split(r'\s*;\s*', tactic)` for compound tactic splitting.
 - Use `datasets.Dataset.from_dict()` for HuggingFace export.
 - Read input files line by line for streaming processing.
-- Package location: `src/wily_rooster/extraction/reporting.py`.
+- Package location: `src/poule/extraction/reporting.py`.

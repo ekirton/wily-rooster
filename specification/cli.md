@@ -332,7 +332,7 @@ Errors are always printed to stderr. Successful output is always printed to stdo
 ### search-by-name (human-readable)
 
 ```
-$ wily-rooster search-by-name --db index.db "Nat.add_comm" --limit 3
+$ poule search-by-name --db index.db "Nat.add_comm" --limit 3
 Coq.Arith.PeanoNat.Nat.add_comm  lemma  0.9500
   forall n m : nat, n + m = m + n
   module: Coq.Arith.PeanoNat
@@ -345,14 +345,14 @@ Coq.Arith.PeanoNat.Nat.add_comm_l  lemma  0.8200
 ### search-by-name (JSON)
 
 ```
-$ wily-rooster search-by-name --db index.db "Nat.add_comm" --limit 3 --json
+$ poule search-by-name --db index.db "Nat.add_comm" --limit 3 --json
 [{"name":"Coq.Arith.PeanoNat.Nat.add_comm","statement":"forall n m : nat, n + m = m + n","type":"forall n m : nat, n + m = m + n","module":"Coq.Arith.PeanoNat","kind":"lemma","score":0.95}]
 ```
 
 ### get-lemma (error)
 
 ```
-$ wily-rooster get-lemma --db index.db "nonexistent.declaration"
+$ poule get-lemma --db index.db "nonexistent.declaration"
 Declaration nonexistent.declaration not found in the index.
 $ echo $?
 1
@@ -361,7 +361,7 @@ $ echo $?
 ### Missing index
 
 ```
-$ wily-rooster search-by-name --db missing.db "test"
+$ poule search-by-name --db missing.db "test"
 Index database not found at missing.db. Run the indexing command to create it.
 $ echo $?
 1
@@ -370,7 +370,7 @@ $ echo $?
 ### replay-proof (human-readable)
 
 ```
-$ wily-rooster replay-proof test.v add_comm
+$ poule replay-proof test.v add_comm
 Proof: add_comm
 File:  test.v
 Steps: 2
@@ -392,21 +392,21 @@ Goal 1: n + m = m + n
 ### replay-proof (JSON)
 
 ```
-$ wily-rooster replay-proof test.v add_comm --json
+$ poule replay-proof test.v add_comm --json
 {"schema_version":1,"session_id":"...","proof_name":"add_comm","file_path":"test.v","total_steps":2,"steps":[...]}
 ```
 
 ### replay-proof (JSON with premises)
 
 ```
-$ wily-rooster replay-proof test.v add_comm --json --premises
+$ poule replay-proof test.v add_comm --json --premises
 {"trace":{"schema_version":1,...},"premises":[{"step_index":1,"tactic":"intros n m.","premises":[]},...]}
 ```
 
 ### replay-proof (error)
 
 ```
-$ wily-rooster replay-proof nonexistent.v add_comm
+$ poule replay-proof nonexistent.v add_comm
 File not found: nonexistent.v
 $ echo $?
 1
@@ -415,7 +415,7 @@ $ echo $?
 ### extract (success)
 
 ```
-$ wily-rooster extract /path/to/stdlib --output stdlib.jsonl
+$ poule extract /path/to/stdlib --output stdlib.jsonl
 Extracting theorem 1/4550...
 Extracting theorem 2/4550...
 ...
@@ -432,7 +432,7 @@ $ echo $?
 ### extract (project not found)
 
 ```
-$ wily-rooster extract /nonexistent --output out.jsonl
+$ poule extract /nonexistent --output out.jsonl
 Project directory not found: /nonexistent
 $ echo $?
 1
@@ -441,7 +441,7 @@ $ echo $?
 ### extract-deps
 
 ```
-$ wily-rooster extract-deps stdlib.jsonl --output deps.jsonl
+$ poule extract-deps stdlib.jsonl --output deps.jsonl
 Processed 4500 extraction records.
 Wrote 4500 dependency entries to deps.jsonl.
 $ echo $?
@@ -451,7 +451,7 @@ $ echo $?
 ### quality-report (JSON)
 
 ```
-$ wily-rooster quality-report stdlib.jsonl --json
+$ poule quality-report stdlib.jsonl --json
 {"premise_coverage":0.87,"proof_length_distribution":{"min":1,"max":342,"mean":12.4,"median":8.0,"p25":4.0,"p75":16.0,"p95":45.0},"tactic_vocabulary":[{"tactic":"apply","count":24500}],"per_project":[{"project_id":"coq-stdlib","premise_coverage":0.89,"proof_length_distribution":{"min":1,"max":200,"mean":10.2,"median":7.0,"p25":3.0,"p75":14.0,"p95":38.0},"theorem_count":4500}]}
 ```
 
@@ -459,11 +459,11 @@ $ wily-rooster quality-report stdlib.jsonl --json
 
 - Use `click` for argument parsing (consistent with the existing extraction CLI).
 - Use `click.Group` to organize search subcommands under a single entry point.
-- Reuse `PipelineContext` and `create_context` from `wily_rooster.pipeline.context`.
-- Reuse pipeline search functions from `wily_rooster.pipeline.search`.
-- Reuse `SearchResult`, `LemmaDetail`, `Module` from `wily_rooster.models.responses`.
+- Reuse `PipelineContext` and `create_context` from `poule.pipeline.context`.
+- Reuse pipeline search functions from `poule.pipeline.search`.
+- Reuse `SearchResult`, `LemmaDetail`, `Module` from `poule.models.responses`.
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` (same as MCP server).
-- For proof replay: use `SessionManager` from `wily_rooster.session.manager`, `serialize_proof_trace` and `serialize_premise_annotation` from `wily_rooster.serialization.serialize`.
-- For extraction: use `ExtractionCampaignOrchestrator` from `wily_rooster.extraction.campaign`, `extract_dependency_graph` from `wily_rooster.extraction.dependency_graph`, `generate_quality_report` from `wily_rooster.extraction.reporting`.
+- For proof replay: use `SessionManager` from `poule.session.manager`, `serialize_proof_trace` and `serialize_premise_annotation` from `poule.serialization.serialize`.
+- For extraction: use `ExtractionCampaignOrchestrator` from `poule.extraction.campaign`, `extract_dependency_graph` from `poule.extraction.dependency_graph`, `generate_quality_report` from `poule.extraction.reporting`.
 - Use `asyncio.run()` to bridge Click's sync execution model to the async `SessionManager` API.
-- Package location: `src/wily_rooster/cli/`.
+- Package location: `src/poule/cli/`.

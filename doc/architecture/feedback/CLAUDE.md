@@ -1,6 +1,6 @@
 # Architecture Feedback Guidelines
 
-Inherits from [doc/feedback-standards.md](../../doc/feedback-standards.md).
+Inherits from [doc/feedback-standards.md](../../feedback-standards.md).
 
 ## Authority
 

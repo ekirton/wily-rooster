@@ -123,4 +123,4 @@ Continues until `max_rounds` or no new candidates.
 - Use `math.log2` for the weight function.
 - Inverted index as `dict[str, set[int]]`.
 - Declaration symbols as `dict[int, set[str]]`.
-- Package location: `src/wily_rooster/channels/`.
+- Package location: `src/poule/channels/`.

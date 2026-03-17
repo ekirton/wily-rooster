@@ -106,8 +106,8 @@ coqc --version
 
 ```bash
 # Clone the repository
-git clone https://github.com/ekirton/wily-rooster.git
-cd wily-rooster
+git clone https://github.com/ekirton/poule.git
+cd poule
 
 # Install with uv
 uv sync
@@ -123,7 +123,7 @@ uv sync --group dev
 Build the search index from your installed Coq standard library and MathComp:
 
 ```bash
-uv run python -m wily_rooster.extraction --target stdlib+mathcomp --db index.db --progress
+uv run python -m poule.extraction --target stdlib+mathcomp --db index.db --progress
 ```
 
 This runs the offline extraction pipeline:
@@ -147,29 +147,29 @@ Finalizing index...
 
 ### 2. Search from the Command Line
 
-All search tools are available as standalone CLI commands via `python -m wily_rooster.cli`:
+All search tools are available as standalone CLI commands via `python -m poule.cli`:
 
 ```bash
 # Search by name (glob or substring)
-uv run python -m wily_rooster.cli search-by-name --db index.db "Nat.add_comm"
+uv run python -m poule.cli search-by-name --db index.db "Nat.add_comm"
 
 # Search by type signature (multi-channel fusion)
-uv run python -m wily_rooster.cli search-by-type --db index.db "nat -> nat -> nat"
+uv run python -m poule.cli search-by-type --db index.db "nat -> nat -> nat"
 
 # Search by structural similarity
-uv run python -m wily_rooster.cli search-by-structure --db index.db "forall n, n + 0 = n"
+uv run python -m poule.cli search-by-structure --db index.db "forall n, n + 0 = n"
 
 # Search by symbol names (space-separated)
-uv run python -m wily_rooster.cli search-by-symbols --db index.db Coq.Init.Nat.add Coq.Init.Datatypes.nat
+uv run python -m poule.cli search-by-symbols --db index.db Coq.Init.Nat.add Coq.Init.Datatypes.nat
 
 # Get full details for a specific declaration
-uv run python -m wily_rooster.cli get-lemma --db index.db "Coq.Arith.PeanoNat.Nat.add_comm"
+uv run python -m poule.cli get-lemma --db index.db "Coq.Arith.PeanoNat.Nat.add_comm"
 
 # Navigate the dependency graph
-uv run python -m wily_rooster.cli find-related --db index.db --relation uses "Coq.Arith.PeanoNat.Nat.add_comm"
+uv run python -m poule.cli find-related --db index.db --relation uses "Coq.Arith.PeanoNat.Nat.add_comm"
 
 # Browse the module hierarchy
-uv run python -m wily_rooster.cli list-modules --db index.db "Coq.Arith"
+uv run python -m poule.cli list-modules --db index.db "Coq.Arith"
 ```
 
 All search commands accept `--limit N` (default 50, max 200) and `--json` for machine-readable output.
@@ -180,13 +180,13 @@ Extract the complete proof trace for a named proof in a `.v` file. An example fi
 
 ```bash
 # Human-readable output
-uv run python -m wily_rooster.cli replay-proof examples/arith.v add_comm
+uv run python -m poule.cli replay-proof examples/arith.v add_comm
 
 # JSON output (for scripts and pipelines)
-uv run python -m wily_rooster.cli replay-proof examples/arith.v add_comm --json
+uv run python -m poule.cli replay-proof examples/arith.v add_comm --json
 
 # Include per-step premise annotations
-uv run python -m wily_rooster.cli replay-proof examples/arith.v add_comm --json --premises
+uv run python -m poule.cli replay-proof examples/arith.v add_comm --json --premises
 ```
 
 No search index is needed — `replay-proof` works directly with `.v` files through the Coq backend.
@@ -194,7 +194,7 @@ No search index is needed — `replay-proof` works directly with `.v` files thro
 ### 4. Start the MCP Server
 
 ```bash
-uv run python -m wily_rooster.server --db index.db
+uv run python -m poule.server --db index.db
 ```
 
 The server communicates via stdio, compatible with Claude Code's MCP configuration.
@@ -208,7 +208,7 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json`):
   "mcpServers": {
     "coq-search": {
       "command": "uv",
-      "args": ["run", "--project", "/path/to/wily-rooster", "python", "-m", "wily_rooster.server", "--db", "/path/to/wily-rooster/index.db"]
+      "args": ["run", "--project", "/path/to/poule", "python", "-m", "poule.server", "--db", "/path/to/poule/index.db"]
     },
     "mermaid": {
       "command": "npx",
@@ -218,7 +218,7 @@ Add to your Claude Code MCP config (`~/.claude/mcp.json`):
 }
 ```
 
-Replace `/path/to/wily-rooster` with the absolute path to your cloned repository.
+Replace `/path/to/poule` with the absolute path to your cloned repository.
 
 The `mermaid` entry adds the [Mermaid Chart MCP server](https://github.com/Mermaid-Chart/mermaid-mcp-server), which renders Mermaid syntax produced by the visualization tools into diagrams. When both servers are configured, Claude Code can visualize proof states, proof trees, and dependency graphs by calling a visualization tool to generate the Mermaid syntax and then passing it to the Mermaid Chart MCP for rendering.
 
@@ -328,7 +328,7 @@ uv run pytest
 uv run pytest test/test_data_structures.py -v
 
 # Run with coverage
-uv run pytest --cov=wily_rooster
+uv run pytest --cov=poule
 
 # Skip tests requiring Coq installation
 uv run pytest -m "not requires_coq"
@@ -337,7 +337,7 @@ uv run pytest -m "not requires_coq"
 ### Project Structure
 
 ```
-src/wily_rooster/
+src/poule/
 ├── models/          # Core data types (labels, trees, enums, responses)
 ├── normalization/   # Coq term normalization + CSE
 ├── storage/         # SQLite read/write layer

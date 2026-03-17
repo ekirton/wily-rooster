@@ -1,16 +1,16 @@
 """TDD tests for the MCP server layer (validation, errors, handlers).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/server/ modules exist.
+until src/poule/server/ modules exist.
 
 Spec: specification/mcp-server.md
 Architecture: doc/architecture/mcp-server.md
 Tasks: tasks/mcp-server.md
 
 Import paths under test:
-  wily_rooster.server.handlers
-  wily_rooster.server.validation
-  wily_rooster.server.errors
+  poule.server.handlers
+  poule.server.validation
+  poule.server.errors
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_validation():
-    from wily_rooster.server.validation import (
+    from poule.server.validation import (
         validate_string,
         validate_limit,
         validate_symbols,
@@ -36,7 +36,7 @@ def _import_validation():
 
 
 def _import_errors():
-    from wily_rooster.server.errors import (
+    from poule.server.errors import (
         format_error,
         INDEX_MISSING,
         INDEX_VERSION_MISMATCH,
@@ -47,7 +47,7 @@ def _import_errors():
 
 
 def _import_handlers():
-    from wily_rooster.server.handlers import (
+    from poule.server.handlers import (
         handle_search_by_name,
         handle_search_by_type,
         handle_search_by_structure,
@@ -956,7 +956,7 @@ class TestResponseFormatting:
 # ===========================================================================
 
 def _import_response_types():
-    from wily_rooster.models.responses import SearchResult, LemmaDetail, Module
+    from poule.models.responses import SearchResult, LemmaDetail, Module
     return SearchResult, LemmaDetail, Module
 
 
@@ -1155,7 +1155,7 @@ class TestDataclassSerialization:
 # ===========================================================================
 
 def _import_proof_handlers():
-    from wily_rooster.server.handlers import (
+    from poule.server.handlers import (
         handle_open_proof_session,
         handle_close_proof_session,
         handle_list_proof_sessions,
@@ -1186,7 +1186,7 @@ def _import_proof_handlers():
 
 
 def _import_proof_errors():
-    from wily_rooster.server.errors import (
+    from poule.server.errors import (
         SESSION_NOT_FOUND,
         SESSION_EXPIRED,
         FILE_NOT_FOUND,
@@ -1205,7 +1205,7 @@ def _import_proof_errors():
 
 
 def _import_session_error():
-    from wily_rooster.session.errors import SessionError
+    from poule.session.errors import SessionError
     return SessionError
 
 
@@ -1215,7 +1215,7 @@ def _make_proof_state(
     is_complete: bool = False,
 ):
     """Build a ProofState dict for mock returns."""
-    from wily_rooster.session.types import ProofState, Goal
+    from poule.session.types import ProofState, Goal
     return ProofState(
         schema_version=1,
         session_id=session_id,
@@ -1416,7 +1416,7 @@ class TestHandleListProofSessions:
     @pytest.mark.asyncio
     async def test_returns_session_list(self):
         (_, _, handle_list, *_) = _import_proof_handlers()
-        from wily_rooster.session.types import Session
+        from poule.session.types import Session
         ctx = _make_proof_handler_ctx()
         ctx.session_manager.list_sessions.return_value = [
             Session(
@@ -1540,7 +1540,7 @@ class TestHandleExtractProofTrace:
     @pytest.mark.asyncio
     async def test_returns_trace(self):
         (_, _, _, _, _, handle_extract, *_) = _import_proof_handlers()
-        from wily_rooster.session.types import ProofTrace, TraceStep
+        from poule.session.types import ProofTrace, TraceStep
         state0 = _make_proof_state(step_index=0)
         ctx = _make_proof_handler_ctx()
         ctx.session_manager.extract_trace.return_value = ProofTrace(
@@ -1725,7 +1725,7 @@ class TestHandleGetProofPremises:
     @pytest.mark.asyncio
     async def test_returns_annotations(self):
         (_, _, _, _, _, _, _, _, _, _, handle_premises, _) = _import_proof_handlers()
-        from wily_rooster.session.types import PremiseAnnotation, Premise
+        from poule.session.types import PremiseAnnotation, Premise
         ctx = _make_proof_handler_ctx()
         ctx.session_manager.get_premises.return_value = [
             PremiseAnnotation(
@@ -1753,7 +1753,7 @@ class TestHandleGetStepPremises:
     @pytest.mark.asyncio
     async def test_returns_single_annotation(self):
         (*_, handle_step_premises) = _import_proof_handlers()
-        from wily_rooster.session.types import PremiseAnnotation
+        from poule.session.types import PremiseAnnotation
         ctx = _make_proof_handler_ctx()
         ctx.session_manager.get_step_premises.return_value = PremiseAnnotation(
             step_index=1,

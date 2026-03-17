@@ -29,7 +29,7 @@ All search subcommands share common options:
 ### search-by-name
 
 ```
-wily-rooster search-by-name --db <path> <pattern> [--limit N] [--json]
+poule search-by-name --db <path> <pattern> [--limit N] [--json]
 ```
 
 Positional argument: `pattern` — the name search query.
@@ -37,7 +37,7 @@ Positional argument: `pattern` — the name search query.
 ### search-by-type
 
 ```
-wily-rooster search-by-type --db <path> <type_expr> [--limit N] [--json]
+poule search-by-type --db <path> <type_expr> [--limit N] [--json]
 ```
 
 Positional argument: `type_expr` — a Coq type expression.
@@ -45,7 +45,7 @@ Positional argument: `type_expr` — a Coq type expression.
 ### search-by-structure
 
 ```
-wily-rooster search-by-structure --db <path> <expression> [--limit N] [--json]
+poule search-by-structure --db <path> <expression> [--limit N] [--json]
 ```
 
 Positional argument: `expression` — a Coq expression.
@@ -53,7 +53,7 @@ Positional argument: `expression` — a Coq expression.
 ### search-by-symbols
 
 ```
-wily-rooster search-by-symbols --db <path> <symbol> [<symbol> ...] [--limit N] [--json]
+poule search-by-symbols --db <path> <symbol> [<symbol> ...] [--limit N] [--json]
 ```
 
 Positional arguments: one or more symbol names.
@@ -61,7 +61,7 @@ Positional arguments: one or more symbol names.
 ### get-lemma
 
 ```
-wily-rooster get-lemma --db <path> <name> [--json]
+poule get-lemma --db <path> <name> [--json]
 ```
 
 Positional argument: `name` — fully qualified declaration name. `--limit` does not apply.
@@ -69,7 +69,7 @@ Positional argument: `name` — fully qualified declaration name. `--limit` does
 ### find-related
 
 ```
-wily-rooster find-related --db <path> <name> --relation <rel> [--limit N] [--json]
+poule find-related --db <path> <name> --relation <rel> [--limit N] [--json]
 ```
 
 Positional argument: `name` — fully qualified declaration name.
@@ -78,7 +78,7 @@ Required option: `--relation` — one of `uses`, `used_by`, `same_module`, `same
 ### list-modules
 
 ```
-wily-rooster list-modules --db <path> [<prefix>] [--json]
+poule list-modules --db <path> [<prefix>] [--json]
 ```
 
 Optional positional argument: `prefix` — module prefix to filter by (default: empty, lists all top-level modules).
@@ -88,7 +88,7 @@ Optional positional argument: `prefix` — module prefix to filter by (default: 
 ### replay-proof
 
 ```
-wily-rooster replay-proof <file_path> <proof_name> [--json] [--premises]
+poule replay-proof <file_path> <proof_name> [--json] [--premises]
 ```
 
 Positional arguments: `file_path` — path to a .v file; `proof_name` — name of the proof to replay.
@@ -222,7 +222,7 @@ With `--premises`: `{"trace": <serialize_proof_trace output>, "premises": [<seri
 ### extract
 
 ```
-wily-rooster extract <project_dir> [<project_dir> ...] --output <path> [--name-pattern <pattern>] [--modules <mod,...>] [--incremental] [--resume] [--include-diffs]
+poule extract <project_dir> [<project_dir> ...] --output <path> [--name-pattern <pattern>] [--modules <mod,...>] [--incremental] [--resume] [--include-diffs]
 ```
 
 Positional arguments: one or more Coq project directories.
@@ -243,7 +243,7 @@ No `--db` option — extraction is independent of the search index.
 ### extract-deps
 
 ```
-wily-rooster extract-deps <extraction_output> --output <path>
+poule extract-deps <extraction_output> --output <path>
 ```
 
 Positional argument: path to a JSON Lines extraction output file.
@@ -253,7 +253,7 @@ Reads ExtractionRecords and produces a dependency graph (JSON Lines, one Depende
 ### quality-report
 
 ```
-wily-rooster quality-report <extraction_output> [--output <path>] [--json]
+poule quality-report <extraction_output> [--output <path>] [--json]
 ```
 
 Positional argument: path to a JSON Lines extraction output file.

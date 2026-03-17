@@ -257,4 +257,4 @@ All record types in a single output file share the same schema version. The vers
 - Use `datetime.isoformat(timespec='seconds')` + `'Z'` suffix for timestamps.
 - Write output using `open(path, 'w', encoding='utf-8')` with explicit UTF-8 encoding.
 - Flush after each line write for crash resilience during long campaigns.
-- Package location: `src/wily_rooster/extraction/output.py`.
+- Package location: `src/poule/extraction/output.py`.

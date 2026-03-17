@@ -26,7 +26,7 @@ Human-readable output (the default) makes the CLI usable interactively — a dev
 
 ### Why a unified command group
 
-All search commands live under a single entry point (e.g., `wily-rooster search-by-name ...`), sharing common options like `--db` and `--json`. This avoids scattering multiple binaries and keeps the interface discoverable via `--help`.
+All search commands live under a single entry point (e.g., `poule search-by-name ...`), sharing common options like `--db` and `--json`. This avoids scattering multiple binaries and keeps the interface discoverable via `--help`.
 
 ## Scope Boundaries
 

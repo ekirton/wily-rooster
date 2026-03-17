@@ -4,7 +4,7 @@ Tests target the public API defined in specification/channel-fts.md:
   - fts_query(raw_query) -> str
   - fts_search(query, limit, reader) -> list of results with normalized scores
 
-Implementation will live in src/wily_rooster/channels/fts.py.
+Implementation will live in src/poule/channels/fts.py.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from wily_rooster.channels.fts import fts_query, fts_search
+from poule.channels.fts import fts_query, fts_search
 
 
 # ---------------------------------------------------------------------------

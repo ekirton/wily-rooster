@@ -1,7 +1,7 @@
 """TDD tests for Coq library extraction (specification/extraction.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until the production modules exist under src/wily_rooster/extraction/.
+until the production modules exist under src/poule/extraction/.
 
 Covers: kind mapping, library discovery, two-pass pipeline, dependency
 resolution, post-processing, error handling, and progress reporting.
@@ -44,7 +44,7 @@ class TestMapKindMappedForms:
         ],
     )
     def test_maps_coq_form_to_storage_kind(self, coq_form, expected):
-        from wily_rooster.extraction.kind_mapping import map_kind
+        from poule.extraction.kind_mapping import map_kind
 
         assert map_kind(coq_form) == expected
 
@@ -68,7 +68,7 @@ class TestMapKindMappedForms:
         ],
     )
     def test_output_is_always_lowercase(self, coq_form, expected):
-        from wily_rooster.extraction.kind_mapping import map_kind
+        from poule.extraction.kind_mapping import map_kind
 
         result = map_kind(coq_form)
         assert result == result.lower()
@@ -88,7 +88,7 @@ class TestMapKindExcludedForms:
         ],
     )
     def test_excluded_form_returns_none(self, coq_form):
-        from wily_rooster.extraction.kind_mapping import map_kind
+        from poule.extraction.kind_mapping import map_kind
 
         assert map_kind(coq_form) is None
 
@@ -119,7 +119,7 @@ class TestMapKindCaseSensitivity:
         ],
     )
     def test_case_insensitive_input(self, coq_form, expected):
-        from wily_rooster.extraction.kind_mapping import map_kind
+        from poule.extraction.kind_mapping import map_kind
 
         assert map_kind(coq_form) == expected
 
@@ -133,7 +133,7 @@ class TestDiscoverLibraries:
     """discover_libraries returns .vo file paths for requested targets."""
 
     def test_returns_vo_paths_from_mock_filesystem(self, tmp_path):
-        from wily_rooster.extraction.pipeline import discover_libraries
+        from poule.extraction.pipeline import discover_libraries
 
         # Create a fake Coq lib directory with .vo files
         theories = tmp_path / "theories"
@@ -146,7 +146,7 @@ class TestDiscoverLibraries:
         # Also create a non-.vo file that should be ignored
         (theories / "Init" / "Datatypes.glob").touch()
 
-        with patch("wily_rooster.extraction.pipeline.subprocess") as mock_sub:
+        with patch("poule.extraction.pipeline.subprocess") as mock_sub:
             mock_sub.run.return_value = Mock(
                 returncode=0, stdout=str(tmp_path) + "\n"
             )
@@ -156,14 +156,14 @@ class TestDiscoverLibraries:
         assert all(str(p).endswith(".vo") for p in result)
 
     def test_raises_extraction_error_when_target_not_found(self, tmp_path):
-        from wily_rooster.extraction.errors import ExtractionError
-        from wily_rooster.extraction.pipeline import discover_libraries
+        from poule.extraction.errors import ExtractionError
+        from poule.extraction.pipeline import discover_libraries
 
         # Empty directory — no .vo files
         empty = tmp_path / "empty"
         empty.mkdir()
 
-        with patch("wily_rooster.extraction.pipeline.subprocess") as mock_sub:
+        with patch("poule.extraction.pipeline.subprocess") as mock_sub:
             mock_sub.run.return_value = Mock(
                 returncode=0, stdout=str(empty) + "\n"
             )
@@ -171,10 +171,10 @@ class TestDiscoverLibraries:
                 discover_libraries("stdlib")
 
     def test_raises_extraction_error_when_coq_not_installed(self):
-        from wily_rooster.extraction.errors import ExtractionError
-        from wily_rooster.extraction.pipeline import discover_libraries
+        from poule.extraction.errors import ExtractionError
+        from poule.extraction.pipeline import discover_libraries
 
-        with patch("wily_rooster.extraction.pipeline.subprocess") as mock_sub:
+        with patch("poule.extraction.pipeline.subprocess") as mock_sub:
             mock_sub.run.side_effect = FileNotFoundError("coqc not found")
             with pytest.raises(ExtractionError):
                 discover_libraries("stdlib")
@@ -187,7 +187,7 @@ class TestDiscoverLibraries:
         lives at user-contrib/Stdlib/ (Rocq 9.x), the function must look
         there — not only in theories/ which contains a small legacy subset.
         """
-        from wily_rooster.extraction.pipeline import discover_libraries
+        from poule.extraction.pipeline import discover_libraries
 
         # Simulate Rocq 9.x layout: most stdlib is under user-contrib/Stdlib
         theories = tmp_path / "theories"
@@ -209,7 +209,7 @@ class TestDiscoverLibraries:
         (user_contrib / "Arith" / "PeanoNat.vo").touch()
         (user_contrib / "Lists" / "List.vo").touch()
 
-        with patch("wily_rooster.extraction.pipeline.subprocess") as mock_sub:
+        with patch("poule.extraction.pipeline.subprocess") as mock_sub:
             mock_sub.run.return_value = Mock(
                 returncode=0, stdout=str(tmp_path) + "\n"
             )
@@ -257,7 +257,7 @@ class TestPass1SingleDeclaration:
     """Pass 1: a single declaration is processed through the full pipeline."""
 
     def test_single_declaration_produces_correct_db_writes(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[("Coq.Init.Nat.add", "Definition", {"mock": "constr"})]
@@ -267,15 +267,15 @@ class TestPass1SingleDeclaration:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Init/Nat.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
         ):
@@ -289,7 +289,7 @@ class TestPass1DeclarationFailure:
     """When normalization fails for one declaration, it is logged and skipped."""
 
     def test_failing_declaration_is_skipped_others_continue(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[
@@ -312,19 +312,19 @@ class TestPass1DeclarationFailure:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Init.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[
                     Mock(name="Good.Decl.one"),  # success
                     None,  # failure returns None
@@ -342,7 +342,7 @@ class TestPass1BatchSize:
     """Declarations are batch-inserted with a batch size of 1000."""
 
     def test_batch_insert_called_per_1000_declarations(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         # Create 2500 declarations
         decls = [
@@ -360,19 +360,19 @@ class TestPass1BatchSize:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Lib.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -396,7 +396,7 @@ class TestPass2DependencyResolution:
     """Pass 2 resolves dependency names to IDs via the backend."""
 
     def test_resolved_dependencies_are_inserted(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[
@@ -420,19 +420,19 @@ class TestPass2DependencyResolution:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[mock_result1, mock_result2],
             ),
         ):
@@ -445,7 +445,7 @@ class TestPass2UnresolvedTargets:
     """Unresolved dependency targets are silently skipped."""
 
     def test_unresolved_targets_skipped(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[("A.lemma1", "Lemma", {"mock": "constr"})]
@@ -463,19 +463,19 @@ class TestPass2UnresolvedTargets:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -494,7 +494,7 @@ class TestPostProcessingSymbolFreq:
     """Symbol frequencies are computed from all declarations' symbol sets."""
 
     def test_symbol_frequencies_computed_correctly(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[
@@ -516,19 +516,19 @@ class TestPostProcessingSymbolFreq:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[mock_r1, mock_r2],
             ),
         ):
@@ -541,7 +541,7 @@ class TestPostProcessingMetadata:
     """Metadata is written: schema_version, coq_version, etc."""
 
     def test_metadata_written_with_required_keys(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[("A.decl1", "Lemma", {"mock": "constr"})]
@@ -556,19 +556,19 @@ class TestPostProcessingMetadata:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -589,7 +589,7 @@ class TestPostProcessingFinalize:
     """writer.finalize() is called after post-processing."""
 
     def test_finalize_called_on_writer(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[("A.decl1", "Lemma", {"mock": "constr"})]
@@ -603,19 +603,19 @@ class TestPostProcessingFinalize:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -633,8 +633,8 @@ class TestBackendCrash:
     """Backend crash aborts the pipeline, deletes partial DB, raises ExtractionError."""
 
     def test_backend_crash_raises_extraction_error(self, tmp_path):
-        from wily_rooster.extraction.errors import ExtractionError
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.errors import ExtractionError
+        from poule.extraction.pipeline import run_extraction
 
         db_path = tmp_path / "partial.db"
 
@@ -655,22 +655,22 @@ class TestBackendCrash:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[
                     Path("/fake/A.vo"),
                     Path("/fake/B.vo"),
                 ],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -681,8 +681,8 @@ class TestBackendCrash:
         assert not db_path.exists()
 
     def test_backend_crash_deletes_partial_db_file(self, tmp_path):
-        from wily_rooster.extraction.errors import ExtractionError
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.errors import ExtractionError
+        from poule.extraction.pipeline import run_extraction
 
         db_path = tmp_path / "partial.db"
         # Pre-create the file to verify it gets cleaned up
@@ -695,15 +695,15 @@ class TestBackendCrash:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=_make_mock_writer(),
             ),
         ):
@@ -717,16 +717,16 @@ class TestBackendNotFound:
     """Missing backend raises ExtractionError before processing starts."""
 
     def test_backend_not_found_raises_extraction_error(self, tmp_path):
-        from wily_rooster.extraction.errors import ExtractionError
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.errors import ExtractionError
+        from poule.extraction.pipeline import run_extraction
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 side_effect=ExtractionError(
                     "Neither coq-lsp nor sertop found"
                 ),
@@ -747,7 +747,7 @@ class TestProgressReporting:
     """Progress callbacks are invoked with correct counts."""
 
     def test_pass1_progress_reports_declaration_counts(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         decls = [
             (f"A.decl{i}", "Lemma", {"mock": "constr"}) for i in range(5)
@@ -766,19 +766,19 @@ class TestProgressReporting:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -804,7 +804,7 @@ class TestProgressReporting:
         )
 
     def test_pass2_progress_reports_dependency_counts(self):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         decls = [
             (f"A.decl{i}", "Lemma", {"mock": "constr"}) for i in range(3)
@@ -824,19 +824,19 @@ class TestProgressReporting:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -867,7 +867,7 @@ class TestFullRunIntegration:
     """End-to-end: mock backend with 3 declarations → correct DB writes."""
 
     def test_three_declarations_full_pipeline(self, tmp_path):
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         # 3 declarations: 1 lemma, 1 theorem, 1 notation (excluded)
         decls = [
@@ -908,19 +908,19 @@ class TestFullRunIntegration:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Nat.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[result_comm, result_assoc, None],
             ),
         ):
@@ -952,7 +952,7 @@ class TestFullRunIntegration:
     def test_excluded_kinds_not_processed(self, tmp_path):
         """Notation, Abbreviation, Section Variable are never passed to
         process_declaration (or process_declaration returns None)."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         decls = [
             ("A.nota", "Notation", {"mock": "c"}),
@@ -970,19 +970,19 @@ class TestFullRunIntegration:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[None, None, None, real_result],
             ),
         ):
@@ -1000,7 +1000,7 @@ class TestFullRunIntegration:
     ):
         """Operations occur in correct order: batch_insert before
         resolve_and_insert_dependencies before finalize."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend(
             declarations=[("A.decl1", "Lemma", {"mock": "constr"})]
@@ -1033,19 +1033,19 @@ class TestFullRunIntegration:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -1076,7 +1076,7 @@ class TestIdempotentReIndexing:
         """GIVEN an existing SQLite database at the output path
         WHEN run_extraction is called
         THEN the existing file is deleted before the new index is created."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         db_path = tmp_path / "index.db"
 
@@ -1105,19 +1105,19 @@ class TestIdempotentReIndexing:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 side_effect=mock_create_writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -1133,7 +1133,7 @@ class TestIdempotentReIndexing:
         """GIVEN no file at the output path
         WHEN run_extraction is called
         THEN the index is created normally."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         db_path = tmp_path / "fresh.db"
         assert not db_path.exists()
@@ -1150,19 +1150,19 @@ class TestIdempotentReIndexing:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/A.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=mock_result,
             ),
         ):
@@ -1180,18 +1180,18 @@ class TestExtractionError:
     """ExtractionError carries a message and is the base error class."""
 
     def test_extraction_error_is_exception(self):
-        from wily_rooster.extraction.errors import ExtractionError
+        from poule.extraction.errors import ExtractionError
 
         assert issubclass(ExtractionError, Exception)
 
     def test_extraction_error_carries_message(self):
-        from wily_rooster.extraction.errors import ExtractionError
+        from poule.extraction.errors import ExtractionError
 
         err = ExtractionError("backend missing")
         assert "backend missing" in str(err)
 
     def test_extraction_error_can_be_raised_and_caught(self):
-        from wily_rooster.extraction.errors import ExtractionError
+        from poule.extraction.errors import ExtractionError
 
         with pytest.raises(ExtractionError):
             raise ExtractionError("test")
@@ -1207,7 +1207,7 @@ class TestTypeSigPassthrough:
     instead of calling backend.pretty_print_type (§4.4 step 7)."""
 
     def test_type_expr_from_constr_t_type_signature(self):
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {
@@ -1230,7 +1230,7 @@ class TestTypeSigPassthrough:
 
     def test_no_pretty_print_type_call_when_type_sig_available(self):
         """When constr_t has type_signature, pretty_print_type is NOT called."""
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {
@@ -1257,7 +1257,7 @@ class TestPrefetchedData:
     when provided, avoiding per-declaration backend calls."""
 
     def test_uses_prefetched_statement(self):
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {"name": "A", "type_signature": "Prop", "source": "coq-lsp"}
@@ -1272,7 +1272,7 @@ class TestPrefetchedData:
         backend.pretty_print.assert_not_called()
 
     def test_uses_prefetched_dependencies(self):
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {"name": "A", "type_signature": "Prop", "source": "coq-lsp"}
@@ -1288,7 +1288,7 @@ class TestPrefetchedData:
         backend.get_dependencies.assert_not_called()
 
     def test_falls_back_to_backend_when_no_prefetch(self):
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         backend.pretty_print.return_value = "backend statement"
@@ -1319,7 +1319,7 @@ class TestMetadataOnlyConstrT:
         """A dict constr_t produces a valid result with tree=None and no
         normalization error in the log."""
         import logging
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {
@@ -1347,7 +1347,7 @@ class TestMetadataOnlyConstrT:
 
     def test_dict_constr_t_preserves_type_signature(self):
         """type_expr is extracted from the dict's type_signature field."""
-        from wily_rooster.extraction.pipeline import process_declaration
+        from poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
         constr_t = {
@@ -1366,8 +1366,8 @@ class TestMetadataOnlyConstrT:
 
     def test_constr_node_constr_t_still_normalizes(self):
         """When constr_t is a ConstrNode, normalization proceeds normally."""
-        from wily_rooster.extraction.pipeline import process_declaration
-        from wily_rooster.normalization.constr_node import Const
+        from poule.extraction.pipeline import process_declaration
+        from poule.normalization.constr_node import Const
 
         backend = _make_mock_backend()
         constr_t = Const(fqn="Coq.Init.Nat.add")
@@ -1392,7 +1392,7 @@ class TestDeclarationDeduplication:
 
     def test_duplicate_names_across_vo_files_keeps_first(self, tmp_path):
         """Same name from two .vo files → only one process_declaration call."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         # Two .vo files both contain "Coq.Init.Nat.add"
         backend = _make_mock_backend()
@@ -1413,19 +1413,19 @@ class TestDeclarationDeduplication:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Nat.vo"), Path("/fake/Nat2.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=result_mock,
             ) as mock_process,
         ):
@@ -1436,7 +1436,7 @@ class TestDeclarationDeduplication:
 
     def test_unique_names_across_vo_files_all_processed(self, tmp_path):
         """Different names from multiple .vo files → all processed."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend()
         backend.list_declarations.side_effect = [
@@ -1465,19 +1465,19 @@ class TestDeclarationDeduplication:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/fake/Nat.vo"), Path("/fake/Nat2.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 side_effect=[result_add, result_mul],
             ) as mock_process,
         ):
@@ -1502,7 +1502,7 @@ class TestVoToLogicalPath:
 
     def test_stdlib_rocq9_produces_coq_prefix(self):
         """user-contrib/Stdlib/Arith/PeanoNat.vo → Coq.Arith.PeanoNat (canonical)"""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/user-contrib/Stdlib/Arith/PeanoNat.vo")
         # _vo_to_logical_path returns the import path (no Coq. prefix)
@@ -1512,21 +1512,21 @@ class TestVoToLogicalPath:
 
     def test_mathcomp_user_contrib(self):
         """user-contrib/mathcomp/ssreflect/ssrbool.vo → mathcomp.ssreflect.ssrbool"""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/user-contrib/mathcomp/ssreflect/ssrbool.vo")
         assert CoqLspBackend._vo_to_logical_path(path) == "mathcomp.ssreflect.ssrbool"
 
     def test_theories_directory(self):
         """theories/Init/Nat.vo → Init.Nat"""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/theories/Init/Nat.vo")
         assert CoqLspBackend._vo_to_logical_path(path) == "Init.Nat"
 
     def test_stdlib_nested_module(self):
         """user-contrib/Stdlib/Init/Nat.vo → Coq.Init.Nat (canonical)"""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/opt/coq/user-contrib/Stdlib/Init/Nat.vo")
         # _vo_to_logical_path returns import path (stripped Stdlib prefix)
@@ -1546,7 +1546,7 @@ class TestFQNDerivationInListDeclarations:
     def test_short_names_get_module_path_prepended(self):
         """Given Search returns Nat.add_comm, the returned name should be
         Coq.Arith.PeanoNat.Nat.add_comm."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend()
         # Patch internal methods to avoid needing a real coq-lsp process
@@ -1569,7 +1569,7 @@ class TestFQNDerivationInListDeclarations:
     def test_mathcomp_short_names_get_module_path_prepended(self):
         """Given Search returns negb_involutive, the returned name should be
         mathcomp.ssreflect.ssrbool.negb_involutive."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend()
         backend._ensure_alive = Mock()
@@ -1605,7 +1605,7 @@ class TestModulePathIsLogicalInPipeline:
     def test_module_path_is_logical_not_filesystem(self, tmp_path):
         """The module_path arg to process_declaration must be a dot-separated
         logical path, not a raw filesystem path."""
-        from wily_rooster.extraction.pipeline import run_extraction
+        from poule.extraction.pipeline import run_extraction
 
         backend = _make_mock_backend()
         backend.list_declarations.return_value = [
@@ -1625,19 +1625,19 @@ class TestModulePathIsLogicalInPipeline:
 
         with (
             patch(
-                "wily_rooster.extraction.pipeline.discover_libraries",
+                "poule.extraction.pipeline.discover_libraries",
                 return_value=[Path("/opt/coq/user-contrib/Stdlib/Init/Nat.vo")],
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_backend",
+                "poule.extraction.pipeline.create_backend",
                 return_value=backend,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.create_writer",
+                "poule.extraction.pipeline.create_writer",
                 return_value=writer,
             ),
             patch(
-                "wily_rooster.extraction.pipeline.process_declaration",
+                "poule.extraction.pipeline.process_declaration",
                 return_value=result_mock,
             ) as mock_process,
         ):
@@ -1675,7 +1675,7 @@ class TestDependencyRelationValues:
 
     def test_get_dependencies_returns_valid_relations(self):
         """get_dependencies must return 'uses', not 'assumes'."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend()
         backend._ensure_alive = Mock()
@@ -1693,7 +1693,7 @@ class TestDependencyRelationValues:
 
     def test_query_declaration_data_returns_valid_relations(self):
         """query_declaration_data must return 'uses', not 'assumes'."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend()
         backend._ensure_alive = Mock()

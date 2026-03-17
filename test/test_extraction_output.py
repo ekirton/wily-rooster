@@ -1,14 +1,14 @@
 """TDD tests for extraction output serialization (specification/extraction-output.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until the production modules exist under src/wily_rooster/extraction/.
+until the production modules exist under src/poule/extraction/.
 
 Spec: specification/extraction-output.md
 Architecture: doc/architecture/extraction-output.md
 
 Import paths under test:
-  wily_rooster.extraction.output
-  wily_rooster.extraction.types
+  poule.extraction.output
+  poule.extraction.types
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from wily_rooster.extraction.types import (
+    from poule.extraction.types import (
         CampaignMetadata,
         ExtractionDiff,
         ExtractionError,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_output():
-    from wily_rooster.extraction.output import (
+    from poule.extraction.output import (
         serialize_campaign_metadata,
         serialize_extraction_diff,
         serialize_extraction_error,

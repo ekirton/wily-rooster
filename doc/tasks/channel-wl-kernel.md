@@ -252,7 +252,7 @@ Implement `load_wl_vectors(db_path: str) -> dict[int, tuple[WlHistogram, int, fl
 
 ```
 src/
-  wily_rooster/
+  poule/
     __init__.py
     models/
       __init__.py
@@ -275,7 +275,7 @@ src/
       wl_indexer.py          # Offline WL histogram computation and storage
 ```
 
-**Primary file for this task**: `src/wily_rooster/channels/wl_kernel.py`
+**Primary file for this task**: `src/poule/channels/wl_kernel.py`
 
 This file contains:
 - `simplified_label(label: NodeLabel) -> str`
@@ -286,11 +286,11 @@ This file contains:
 - `passes_size_filter(query_nc: int, candidate_nc: int) -> bool`
 - `wl_screen(query_hist: WlHistogram, query_nc: int, library_vectors: dict, n: int) -> list[ScoredResult]`
 
-**Secondary file**: `src/wily_rooster/indexing/wl_indexer.py`
+**Secondary file**: `src/poule/indexing/wl_indexer.py`
 - `index_declaration_wl(tree: ExprTree) -> tuple[WlHistogram, int]`
 - `batch_index_wl(declarations, db) -> None`
 
-**Secondary file**: `src/wily_rooster/storage/loader.py`
+**Secondary file**: `src/poule/storage/loader.py`
 - `load_wl_vectors(db_path: str) -> dict[int, tuple[WlHistogram, int, float]]`
 
 ---

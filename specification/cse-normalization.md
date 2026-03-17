@@ -118,4 +118,4 @@ Then: All 5 occurrences remain as `LConst`. Constant labels are never replaced b
 
 - Use `hashlib.md5` for structural hashing.
 - Recursive traversal with Python's default recursion limit (1000). Catch `RecursionError` and raise `NormalizationError`.
-- Package location: `src/wily_rooster/normalization/`.
+- Package location: `src/poule/normalization/`.

@@ -1,16 +1,16 @@
 """TDD tests for the Mermaid Renderer (specification/mermaid-renderer.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/rendering/mermaid_renderer.py exists.
+until src/poule/rendering/mermaid_renderer.py exists.
 
 Spec: specification/mermaid-renderer.md
 Architecture: doc/architecture/mermaid-renderer.md
 Data model: doc/architecture/data-models/proof-types.md
 
 Import paths under test:
-  wily_rooster.rendering.mermaid_renderer  (sanitize, render_proof_state, etc.)
-  wily_rooster.rendering.types             (DetailLevel, RenderedDiagram, SequenceEntry)
-  wily_rooster.session.types               (ProofState, Goal, Hypothesis, ProofTrace, etc.)
+  poule.rendering.mermaid_renderer  (sanitize, render_proof_state, etc.)
+  poule.rendering.types             (DetailLevel, RenderedDiagram, SequenceEntry)
+  poule.session.types               (ProofState, Goal, Hypothesis, ProofTrace, etc.)
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_renderer():
-    from wily_rooster.rendering.mermaid_renderer import (
+    from poule.rendering.mermaid_renderer import (
         sanitize,
         render_proof_state,
         render_proof_tree,
@@ -34,7 +34,7 @@ def _import_renderer():
 
 
 def _import_types():
-    from wily_rooster.session.types import (
+    from poule.session.types import (
         Goal,
         Hypothesis,
         ProofState,
@@ -45,7 +45,7 @@ def _import_types():
 
 
 def _import_detail_level():
-    from wily_rooster.rendering.types import DetailLevel
+    from poule.rendering.types import DetailLevel
     return DetailLevel
 
 

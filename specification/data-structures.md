@@ -601,6 +601,6 @@ entry = DependencyEntry(
 - Use `@dataclass` (mutable) for proof interaction types — `ProofState`, `Goal`, `Hypothesis`, `TraceStep`, `ProofTrace`, `PremiseAnnotation`, `Premise`, `Session`, `GoalChange`, `HypothesisChange`, `ProofStateDiff`.
 - Use `@dataclass(frozen=True)` for extraction types that are immutable once created — `ExtractionRecord`, `ExtractionStep`, `ExtractionDiff`, `ExtractionError`, `CampaignMetadata`, `ProjectMetadata`, `ExtractionSummary`, `ProjectSummary`, `FileSummary`, `DependencyEntry`, `DependencyRef`, `QualityReport`, `DistributionStats`, `TacticFrequency`, `ProjectQualityReport`, `ScopeFilter`.
 - Use `enum.Enum` for `ErrorKind`.
-- Proof interaction types package location: `src/wily_rooster/session/types.py`.
-- Expression tree and response types package location: `src/wily_rooster/models/`.
-- Extraction types package location: `src/wily_rooster/extraction/types.py`.
+- Proof interaction types package location: `src/poule/session/types.py`.
+- Expression tree and response types package location: `src/poule/models/`.
+- Extraction types package location: `src/poule/extraction/types.py`.

@@ -156,4 +156,4 @@ Result: [d2, d3, d1, d4]
 
 - Use `collections.defaultdict(float)` for RRF score accumulation.
 - Collapse match can be recursive (trees are ≤ 50 nodes when used with TED, larger otherwise — but collapse match is always applied regardless of size).
-- Package location: `src/wily_rooster/fusion/`.
+- Package location: `src/poule/fusion/`.

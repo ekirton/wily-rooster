@@ -25,8 +25,8 @@ import sqlite3
 
 import pytest
 
-from wily_rooster.storage import IndexWriter, IndexReader
-from wily_rooster.pipeline.context import PipelineContext, create_context
+from poule.storage import IndexWriter, IndexReader
+from poule.pipeline.context import PipelineContext, create_context
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def _populate_integration_db(writer: IndexWriter) -> dict[str, int]:
 
 def _build_facade(db_path):
     """Create a _PipelineFacade backed by a real database."""
-    from wily_rooster.server.__main__ import _PipelineFacade
+    from poule.server.__main__ import _PipelineFacade
 
     pipeline_ctx = create_context(str(db_path))
     return _PipelineFacade(pipeline_ctx)
@@ -413,7 +413,7 @@ class TestDispatchToolIntegration:
     @pytest.fixture
     def server_ctx(self, tmp_path):
         """Create a _ServerContext with a real _PipelineFacade."""
-        from wily_rooster.server.__main__ import _ServerContext, _PipelineFacade
+        from poule.server.__main__ import _ServerContext, _PipelineFacade
 
         db_path = tmp_path / "integration.db"
         writer = IndexWriter.create(db_path)
@@ -428,7 +428,7 @@ class TestDispatchToolIntegration:
         return ctx
 
     def test_get_lemma_returns_fully_qualified_name(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "get_lemma",
@@ -439,7 +439,7 @@ class TestDispatchToolIntegration:
         assert _is_fully_qualified(parsed["name"])
 
     def test_get_lemma_module_is_logical_path(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "get_lemma",
@@ -449,7 +449,7 @@ class TestDispatchToolIntegration:
         assert _is_logical_module_path(parsed["module"])
 
     def test_get_lemma_has_populated_dependencies(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "get_lemma",
@@ -460,7 +460,7 @@ class TestDispatchToolIntegration:
         assert "Coq.Init.Nat.add" in parsed["dependencies"]
 
     def test_get_lemma_has_populated_symbols(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "get_lemma",
@@ -470,7 +470,7 @@ class TestDispatchToolIntegration:
         assert len(parsed["symbols"]) > 0
 
     def test_list_modules_returns_logical_paths(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "list_modules", {"prefix": "Coq.Arith"},
@@ -484,7 +484,7 @@ class TestDispatchToolIntegration:
             )
 
     def test_find_related_uses_returns_results(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "find_related",
@@ -497,7 +497,7 @@ class TestDispatchToolIntegration:
             assert _is_fully_qualified(r["name"])
 
     def test_search_by_name_results_are_spec_compliant(self, server_ctx):
-        from wily_rooster.server.__main__ import _dispatch_tool
+        from poule.server.__main__ import _dispatch_tool
 
         result = _dispatch_tool(
             server_ctx, "search_by_name",

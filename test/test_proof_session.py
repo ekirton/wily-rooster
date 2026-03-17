@@ -1,16 +1,16 @@
 """TDD tests for the Proof Session Manager (specification/proof-session.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/session/ modules exist.
+until src/poule/session/ modules exist.
 
 Spec: specification/proof-session.md
 Architecture: doc/architecture/proof-session.md
 Data model: doc/architecture/data-models/proof-types.md
 
 Import paths under test:
-  wily_rooster.session.manager  (SessionManager)
-  wily_rooster.session.types    (SessionState, ProofState, etc.)
-  wily_rooster.session.errors   (error codes)
+  poule.session.manager  (SessionManager)
+  poule.session.types    (SessionState, ProofState, etc.)
+  poule.session.errors   (error codes)
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_manager():
-    from wily_rooster.session.manager import SessionManager
+    from poule.session.manager import SessionManager
     return SessionManager
 
 
 def _import_types():
-    from wily_rooster.session.types import (
+    from poule.session.types import (
         Goal,
         Hypothesis,
         Premise,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_errors():
-    from wily_rooster.session.errors import (
+    from poule.session.errors import (
         BACKEND_CRASHED,
         FILE_NOT_FOUND,
         NO_PREVIOUS_STATE,

@@ -1,7 +1,7 @@
 """TDD tests for the MePo symbol-relevance channel.
 
 Tests written before implementation exists.
-Implementation target: src/wily_rooster/channels/mepo.py
+Implementation target: src/poule/channels/mepo.py
 Specification: specification/channel-mepo.md
 """
 
@@ -20,13 +20,13 @@ class TestSymbolWeight:
     """Tests for symbol_weight(freq) -> 1.0 + 2.0 / log2(freq + 1)."""
 
     def test_freq_1_returns_3(self):
-        from wily_rooster.channels.mepo import symbol_weight
+        from poule.channels.mepo import symbol_weight
 
         # 1.0 + 2.0 / log2(1 + 1) = 1.0 + 2.0 / 1.0 = 3.0
         assert symbol_weight(1) == pytest.approx(3.0)
 
     def test_freq_1000_approximately_1_2(self):
-        from wily_rooster.channels.mepo import symbol_weight
+        from poule.channels.mepo import symbol_weight
 
         expected = 1.0 + 2.0 / math.log2(1001)
         assert symbol_weight(1000) == pytest.approx(expected)
@@ -34,7 +34,7 @@ class TestSymbolWeight:
         assert 1.1 < symbol_weight(1000) < 1.3
 
     def test_large_freq_approaches_1(self):
-        from wily_rooster.channels.mepo import symbol_weight
+        from poule.channels.mepo import symbol_weight
 
         w = symbol_weight(1_000_000)
         assert w > 1.0
@@ -49,7 +49,7 @@ class TestMissingSymbolFrequency:
     """When a symbol is absent from symbol_frequencies, treat freq as 1."""
 
     def test_missing_symbol_uses_freq_1(self):
-        from wily_rooster.channels.mepo import mepo_relevance
+        from poule.channels.mepo import mepo_relevance
 
         # Candidate has a single symbol "unknown" not in freq map.
         # Working set contains "unknown".
@@ -70,14 +70,14 @@ class TestMepoRelevance:
     """Tests for mepo_relevance(candidate_symbols, working_set, symbol_frequencies)."""
 
     def test_full_overlap_returns_1(self):
-        from wily_rooster.channels.mepo import mepo_relevance
+        from poule.channels.mepo import mepo_relevance
 
         syms = {"A", "B", "C"}
         freq = {"A": 10, "B": 20, "C": 30}
         assert mepo_relevance(syms, syms, freq) == pytest.approx(1.0)
 
     def test_no_overlap_returns_0(self):
-        from wily_rooster.channels.mepo import mepo_relevance
+        from poule.channels.mepo import mepo_relevance
 
         candidate = {"A", "B"}
         working = {"X", "Y"}
@@ -85,7 +85,7 @@ class TestMepoRelevance:
         assert mepo_relevance(candidate, working, freq) == pytest.approx(0.0)
 
     def test_partial_overlap_computed_correctly(self):
-        from wily_rooster.channels.mepo import mepo_relevance, symbol_weight
+        from poule.channels.mepo import mepo_relevance, symbol_weight
 
         candidate = {"A", "B", "C"}
         working = {"A", "C"}
@@ -99,7 +99,7 @@ class TestMepoRelevance:
         assert mepo_relevance(candidate, working, freq) == pytest.approx(expected)
 
     def test_empty_candidate_returns_0(self):
-        from wily_rooster.channels.mepo import mepo_relevance
+        from poule.channels.mepo import mepo_relevance
 
         result = mepo_relevance(set(), {"A", "B"}, {"A": 1, "B": 1})
         assert result == pytest.approx(0.0)
@@ -140,7 +140,7 @@ class TestMepoSelect:
     """Tests for mepo_select iterative selection."""
 
     def test_single_round_selects_relevant_declarations(self):
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
 
@@ -155,7 +155,7 @@ class TestMepoSelect:
         assert 3 not in selected_ids
 
     def test_iterative_expansion_discovers_transitive_matches(self):
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
 
@@ -166,7 +166,7 @@ class TestMepoSelect:
         assert 2 in selected_ids
 
     def test_empty_query_returns_empty(self):
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
         results = mepo_select(set(), inv, freq, decl_syms)
@@ -175,7 +175,7 @@ class TestMepoSelect:
     def test_threshold_decay(self):
         """With high initial p, only high-relevance decls pass round 1.
         After decay, lower-relevance decls can pass in later rounds."""
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
 
@@ -189,7 +189,7 @@ class TestMepoSelect:
 
     def test_early_stop_when_no_new_candidates(self):
         """If a round selects nothing new, iteration stops."""
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         # Only decl 3 is reachable from X, and it will be selected in round 1.
         # Round 2 won't find anything new (X is the only symbol), so it stops.
@@ -200,7 +200,7 @@ class TestMepoSelect:
 
     def test_max_rounds_limit_respected(self):
         """mepo_select must not exceed max_rounds iterations."""
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
 
@@ -222,7 +222,7 @@ class TestMepoSelect:
         decl 2 reachable. With batch expansion, decl 2 is NOT reachable in
         round 1 — it requires round 2.
         """
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         # Custom universe where within-round expansion would change results.
         # Query: {A}
@@ -244,7 +244,7 @@ class TestMepoSelect:
         assert r2_ids == {10, 20}
 
     def test_results_sorted_descending_by_relevance(self):
-        from wily_rooster.channels.mepo import mepo_select
+        from poule.channels.mepo import mepo_select
 
         inv, freq, decl_syms = _simple_index()
         results = mepo_select({"A"}, inv, freq, decl_syms, p=0.0, c=2.4, max_rounds=5)
@@ -261,8 +261,8 @@ class TestExtractConsts:
     """Tests for extract_consts(tree) -> set[str]."""
 
     def test_extracts_lconst_lind_lconstruct(self, make_leaf, make_node, make_tree):
-        from wily_rooster.channels.mepo import extract_consts
-        from wily_rooster.models.labels import (
+        from poule.channels.mepo import extract_consts
+        from poule.models.labels import (
             LApp, LConst, LInd, LConstruct, LRel,
         )
 
@@ -281,8 +281,8 @@ class TestExtractConsts:
         assert result == {"Nat.add", "Nat", "Bool"}
 
     def test_lconstruct_contributes_parent_inductive_fqn(self, make_leaf, make_tree):
-        from wily_rooster.channels.mepo import extract_consts
-        from wily_rooster.models.labels import LConstruct
+        from poule.channels.mepo import extract_consts
+        from poule.models.labels import LConstruct
 
         # LConstruct stores the parent inductive FQN, not the constructor name.
         tree = make_tree(make_leaf(LConstruct("Coq.Init.Datatypes.bool", 1)))
@@ -292,9 +292,9 @@ class TestExtractConsts:
     def test_tree_with_no_constants_returns_empty_set(
         self, make_leaf, make_node, make_tree,
     ):
-        from wily_rooster.channels.mepo import extract_consts
-        from wily_rooster.models.labels import LProd, LSort, LRel
-        from wily_rooster.models.enums import SortKind
+        from poule.channels.mepo import extract_consts
+        from poule.models.labels import LProd, LSort, LRel
+        from poule.models.enums import SortKind
 
         tree = make_tree(
             make_node(LProd(), [
@@ -306,8 +306,8 @@ class TestExtractConsts:
         assert result == set()
 
     def test_duplicates_collapsed_to_set(self, make_leaf, make_node, make_tree):
-        from wily_rooster.channels.mepo import extract_consts
-        from wily_rooster.models.labels import LApp, LConst
+        from poule.channels.mepo import extract_consts
+        from poule.models.labels import LApp, LConst
 
         # Same constant appears twice in the tree.
         tree = make_tree(

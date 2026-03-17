@@ -1,15 +1,15 @@
 """TDD tests for the Coq Proof Backend (specification/coq-proof-backend.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/session/backend.py exists.
+until src/poule/session/backend.py exists.
 
 Spec: specification/coq-proof-backend.md
 Architecture: doc/architecture/proof-session.md (CoqBackend Interface)
 Data model: doc/architecture/data-models/proof-types.md
 
 Import paths under test:
-  wily_rooster.session.backend  (create_coq_backend, CoqBackend protocol)
-  wily_rooster.session.types    (ProofState, Goal, Hypothesis, Premise)
+  poule.session.backend  (create_coq_backend, CoqBackend protocol)
+  poule.session.types    (ProofState, Goal, Hypothesis, Premise)
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wily_rooster.session.types import (
+from poule.session.types import (
     Goal,
     Hypothesis,
     ProofState,
@@ -27,7 +27,7 @@ from wily_rooster.session.types import (
 
 # All tests in this file require both the backend module (not yet implemented)
 # and a real Coq installation. Skip the entire module if the backend is absent.
-pytest.importorskip("wily_rooster.session.backend", reason="backend module not yet implemented")
+pytest.importorskip("poule.session.backend", reason="backend module not yet implemented")
 
 # Mark all tests in this module as requires_coq
 pytestmark = pytest.mark.requires_coq
@@ -39,7 +39,7 @@ pytestmark = pytest.mark.requires_coq
 
 
 def _import_create_coq_backend():
-    from wily_rooster.session.backend import create_coq_backend
+    from poule.session.backend import create_coq_backend
     return create_coq_backend
 
 

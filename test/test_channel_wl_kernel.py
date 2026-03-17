@@ -1,7 +1,7 @@
 """TDD tests for the WL kernel screening channel.
 
 Tests are written before implementation exists. They will fail with ImportError
-until src/wily_rooster/channels/wl_kernel.py is implemented.
+until src/poule/channels/wl_kernel.py is implemented.
 
 Specification: specification/channel-wl-kernel.md
 """
@@ -18,7 +18,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_wl():
-    from wily_rooster.channels.wl_kernel import (
+    from poule.channels.wl_kernel import (
         wl_histogram,
         wl_cosine,
         size_filter,

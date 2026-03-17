@@ -112,4 +112,4 @@ Then: Returns `"addition OR commutative"` (Rule 3: fallback)
 ## 8. Language-Specific Notes (Python)
 
 - FTS5 queries are passed to `IndexReader.search_fts()` which executes the SQLite MATCH.
-- Package location: `src/wily_rooster/channels/`.
+- Package location: `src/poule/channels/`.

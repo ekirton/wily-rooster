@@ -20,7 +20,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_constr_nodes():
-    from wily_rooster.normalization.constr_node import (
+    from poule.normalization.constr_node import (
         Rel, Var, Sort, Cast, Prod, Lambda, LetIn, App,
         Const, Ind, Construct, Case, Fix, CoFix, Proj, Int, Float,
     )
@@ -31,17 +31,17 @@ def _import_constr_nodes():
 
 
 def _import_normalize():
-    from wily_rooster.normalization.normalize import constr_to_tree, coq_normalize
+    from poule.normalization.normalize import constr_to_tree, coq_normalize
     return constr_to_tree, coq_normalize
 
 
 def _import_errors():
-    from wily_rooster.normalization.errors import NormalizationError
+    from poule.normalization.errors import NormalizationError
     return NormalizationError
 
 
 def _import_labels():
-    from wily_rooster.models.labels import (
+    from poule.models.labels import (
         LRel, LConst, LInd, LConstruct, LSort, LPrimitive,
         LApp, LAbs, LLet, LProj, LCase, LProd, LFix, LCoFix,
     )
@@ -52,12 +52,12 @@ def _import_labels():
 
 
 def _import_enums():
-    from wily_rooster.models.enums import SortKind
+    from poule.models.enums import SortKind
     return SortKind
 
 
 def _import_tree():
-    from wily_rooster.models.tree import TreeNode, ExprTree
+    from poule.models.tree import TreeNode, ExprTree
     return TreeNode, ExprTree
 
 

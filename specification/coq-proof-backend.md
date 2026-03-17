@@ -392,8 +392,8 @@ await backend.shutdown()  # Succeeds (idempotent)
 - Define `CoqBackend` as a `typing.Protocol` class with async methods.
 - Use `asyncio.create_subprocess_exec` for process spawning.
 - Use `asyncio.StreamReader` / `asyncio.StreamWriter` for stdin/stdout pipe communication.
-- For coq-lsp: reuse the Content-Length framing and JSON-RPC message format from the extraction backend (`wily_rooster.extraction.backends.coqlsp_backend`), but implement the proof-specific LSP interactions (document open with tactic stepping, `proof/goals` queries).
+- For coq-lsp: reuse the Content-Length framing and JSON-RPC message format from the extraction backend (`poule.extraction.backends.coqlsp_backend`), but implement the proof-specific LSP interactions (document open with tactic stepping, `proof/goals` queries).
 - For SerAPI: use S-expression parsing for responses.
 - The `create_coq_backend` factory should attempt coq-lsp first, falling back to SerAPI if coq-lsp is not available.
-- Package location: `src/wily_rooster/session/backend.py`.
-- The `_get_backend_factory` function in `wily_rooster.cli.commands` imports `create_coq_backend` from this module.
+- Package location: `src/poule/session/backend.py`.
+- The `_get_backend_factory` function in `poule.cli.commands` imports `create_coq_backend` from this module.

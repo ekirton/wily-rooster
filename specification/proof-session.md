@@ -492,4 +492,4 @@ close_session(session_id)
 - Use `dict` for the session registry; guard writes with a registry-level `asyncio.Lock`.
 - Use `asyncio.create_task` for the background timeout sweep loop.
 - SessionState can be a mutable dataclass holding the CoqBackend, step_history list, and metadata.
-- Package location: `src/wily_rooster/session/`.
+- Package location: `src/poule/session/`.

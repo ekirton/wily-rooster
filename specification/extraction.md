@@ -297,4 +297,4 @@ writer.finalize()
 - Parse coq-lsp JSON responses with `json.loads`; parse SerAPI S-expressions with a lightweight parser.
 - Use `pathlib.Path` for `.vo` file discovery.
 - CLI entry point via `argparse` or `click`.
-- Package location: `src/wily_rooster/extraction/`.
+- Package location: `src/poule/extraction/`.

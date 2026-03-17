@@ -1,14 +1,14 @@
 """TDD tests for the standalone CLI search commands.
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/cli/ modules exist.
+until src/poule/cli/ modules exist.
 
 Spec: specification/cli.md
 Architecture: doc/architecture/cli.md
 
 Import paths under test:
-  wily_rooster.cli.commands
-  wily_rooster.cli.formatting
+  poule.cli.commands
+  poule.cli.formatting
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from wily_rooster.models.responses import LemmaDetail, Module, SearchResult
+from poule.models.responses import LemmaDetail, Module, SearchResult
 
 
 # ---------------------------------------------------------------------------
@@ -83,13 +83,13 @@ def _mod(name: str = "Coq.Arith.PeanoNat", decl_count: int = 42) -> Module:
 
 
 def _import_cli():
-    from wily_rooster.cli.commands import cli
+    from poule.cli.commands import cli
 
     return cli
 
 
 def _import_formatting():
-    from wily_rooster.cli.formatting import (
+    from poule.cli.formatting import (
         format_lemma_detail,
         format_modules,
         format_search_results,
@@ -126,10 +126,10 @@ def _patch_context_and_search(search_fn_name, return_value):
     ctx_mock = MagicMock()
     patches = {
         "context": patch(
-            "wily_rooster.cli.commands.create_context", return_value=ctx_mock
+            "poule.cli.commands.create_context", return_value=ctx_mock
         ),
         "search": patch(
-            f"wily_rooster.cli.commands.{search_fn_name}",
+            f"poule.cli.commands.{search_fn_name}",
             return_value=return_value,
         ),
     }
@@ -272,16 +272,16 @@ class TestSearchByNameCommand:
 
     def test_happy_path_human_readable(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx, \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context") as mock_ctx, \
+             patch("poule.cli.commands.search_by_name", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "Nat.add_comm"])
         assert result.exit_code == 0
         assert "Coq.Arith.PeanoNat.Nat.add_comm" in result.output
 
     def test_happy_path_json(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_name", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "--json", "Nat.add_comm"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -290,16 +290,16 @@ class TestSearchByNameCommand:
 
     def test_custom_limit(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[]) as mock_search:
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_name", return_value=[]) as mock_search:
             runner.invoke(cli, ["search-by-name", "--db", tmp_db, "--limit", "10", "foo"])
         _, kwargs = mock_search.call_args
         assert kwargs.get("limit") == 10 or mock_search.call_args[0][2] == 10
 
     def test_limit_clamped_high(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[]) as mock_search:
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_name", return_value=[]) as mock_search:
             runner.invoke(cli, ["search-by-name", "--db", tmp_db, "--limit", "999", "foo"])
         # limit argument passed to pipeline should be <= 200
         args = mock_search.call_args
@@ -308,15 +308,15 @@ class TestSearchByNameCommand:
 
     def test_empty_results_exit_0(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_name", return_value=[]):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "nonexistent"])
         assert result.exit_code == 0
 
     def test_empty_results_json_outputs_empty_array(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_name", return_value=[]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_name", return_value=[]):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "--json", "nonexistent"])
         assert result.exit_code == 0
         assert json.loads(result.output) == []
@@ -337,16 +337,16 @@ class TestSearchByTypeCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_type", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_type", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-type", "--db", tmp_db, "nat -> nat -> nat"])
         assert result.exit_code == 0
         assert "Coq.Arith.PeanoNat.Nat.add_comm" in result.output
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_type", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_type", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-type", "--db", tmp_db, "--json", "nat -> nat"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -354,9 +354,9 @@ class TestSearchByTypeCommand:
 
     def test_parse_error_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.pipeline.parser import ParseError
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_type", side_effect=ParseError("bad syntax")):
+        from poule.pipeline.parser import ParseError
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_type", side_effect=ParseError("bad syntax")):
             result = runner.invoke(cli, ["search-by-type", "--db", tmp_db, "bad(((syntax"])
         assert result.exit_code == 1
         assert "parse" in result.output.lower() or "parse" in (result.output + getattr(result, 'stderr', '')).lower()
@@ -372,16 +372,16 @@ class TestSearchByStructureCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_structure", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_structure", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-structure", "--db", tmp_db, "forall n, n = n"])
         assert result.exit_code == 0
         assert "Coq.Arith.PeanoNat.Nat.add_comm" in result.output
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_structure", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_structure", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-structure", "--db", tmp_db, "--json", "forall n, n = n"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -389,9 +389,9 @@ class TestSearchByStructureCommand:
 
     def test_parse_error_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.pipeline.parser import ParseError
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_structure", side_effect=ParseError("bad")):
+        from poule.pipeline.parser import ParseError
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_structure", side_effect=ParseError("bad")):
             result = runner.invoke(cli, ["search-by-structure", "--db", tmp_db, "bad((("])
         assert result.exit_code == 1
 
@@ -406,16 +406,16 @@ class TestSearchBySymbolsCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_symbols", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_symbols", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-symbols", "--db", tmp_db, "Nat.add", "Nat.mul"])
         assert result.exit_code == 0
         assert "Coq.Arith.PeanoNat.Nat.add_comm" in result.output
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context"), \
-             patch("wily_rooster.cli.commands.search_by_symbols", return_value=[_sr()]):
+        with patch("poule.cli.commands.create_context"), \
+             patch("poule.cli.commands.search_by_symbols", return_value=[_sr()]):
             result = runner.invoke(cli, ["search-by-symbols", "--db", tmp_db, "--json", "Nat.add"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -437,7 +437,7 @@ class TestGetLemmaCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = {
                 "id": 1,
@@ -457,7 +457,7 @@ class TestGetLemmaCommand:
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = {
                 "id": 1,
@@ -483,7 +483,7 @@ class TestGetLemmaCommand:
 
     def test_not_found_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = None
             mock_ctx_fn.return_value = mock_ctx
@@ -506,7 +506,7 @@ class TestFindRelatedCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = {
                 "id": 1, "name": "A", "module": "Coq.Init",
@@ -533,7 +533,7 @@ class TestFindRelatedCommand:
     @pytest.mark.parametrize("relation", ["uses", "used_by", "same_module", "same_typeclass"])
     def test_valid_relations_accepted(self, runner, tmp_db, relation):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = {
                 "id": 1, "name": "A", "module": "Coq.Init",
@@ -548,7 +548,7 @@ class TestFindRelatedCommand:
 
     def test_not_found_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = None
             mock_ctx_fn.return_value = mock_ctx
@@ -557,7 +557,7 @@ class TestFindRelatedCommand:
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.get_declaration.return_value = {
                 "id": 1, "name": "A", "module": "M",
@@ -582,7 +582,7 @@ class TestListModulesCommand:
 
     def test_happy_path(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.list_modules.return_value = [
                 {"module": "Coq.Arith.PeanoNat", "count": 42},
@@ -595,7 +595,7 @@ class TestListModulesCommand:
 
     def test_no_prefix_lists_all(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.list_modules.return_value = [
                 {"module": "Coq.Arith", "count": 10},
@@ -609,7 +609,7 @@ class TestListModulesCommand:
 
     def test_json_output(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.list_modules.return_value = [
                 {"module": "Coq.Arith.PeanoNat", "count": 42},
@@ -624,7 +624,7 @@ class TestListModulesCommand:
 
     def test_empty_result(self, runner, tmp_db):
         cli = _import_cli()
-        with patch("wily_rooster.cli.commands.create_context") as mock_ctx_fn:
+        with patch("poule.cli.commands.create_context") as mock_ctx_fn:
             mock_ctx = MagicMock()
             mock_ctx.reader.list_modules.return_value = []
             mock_ctx_fn.return_value = mock_ctx
@@ -642,9 +642,9 @@ class TestIndexMissing:
 
     def test_search_by_name_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.storage.errors import IndexNotFoundError
+        from poule.storage.errors import IndexNotFoundError
         with patch(
-            "wily_rooster.cli.commands.create_context",
+            "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found: /nonexistent/path.db"),
         ):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "foo"])
@@ -653,9 +653,9 @@ class TestIndexMissing:
 
     def test_get_lemma_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.storage.errors import IndexNotFoundError
+        from poule.storage.errors import IndexNotFoundError
         with patch(
-            "wily_rooster.cli.commands.create_context",
+            "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found"),
         ):
             result = runner.invoke(cli, ["get-lemma", "--db", tmp_db, "foo"])
@@ -663,9 +663,9 @@ class TestIndexMissing:
 
     def test_list_modules_missing_db(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.storage.errors import IndexNotFoundError
+        from poule.storage.errors import IndexNotFoundError
         with patch(
-            "wily_rooster.cli.commands.create_context",
+            "poule.cli.commands.create_context",
             side_effect=IndexNotFoundError("Database not found"),
         ):
             result = runner.invoke(cli, ["list-modules", "--db", tmp_db])
@@ -682,9 +682,9 @@ class TestSchemaVersionMismatch:
 
     def test_version_mismatch_exits_1(self, runner, tmp_db):
         cli = _import_cli()
-        from wily_rooster.storage.errors import IndexVersionError
+        from poule.storage.errors import IndexVersionError
         with patch(
-            "wily_rooster.cli.commands.create_context",
+            "poule.cli.commands.create_context",
             side_effect=IndexVersionError(found="0", expected="1"),
         ):
             result = runner.invoke(cli, ["search-by-name", "--db", tmp_db, "foo"])
@@ -731,9 +731,9 @@ class TestExtractSubcommand:
         output_path = tmp_path / "output.jsonl"
         # Contract test: real ExtractionCampaignOrchestrator tested in test_extraction_campaign.py
         with patch(
-            "wily_rooster.cli.commands.run_campaign",
+            "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from wily_rooster.extraction.types import ExtractionSummary
+            from poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=10,
@@ -780,9 +780,9 @@ class TestExtractSubcommand:
         project_dir.mkdir()
         # Contract test: real orchestrator tested in test_extraction_campaign.py
         with patch(
-            "wily_rooster.cli.commands.run_campaign",
+            "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from wily_rooster.extraction.types import ExtractionSummary
+            from poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=0,
@@ -800,9 +800,9 @@ class TestExtractSubcommand:
         project_dir.mkdir()
         # Contract test: real orchestrator tested in test_extraction_campaign.py
         with patch(
-            "wily_rooster.cli.commands.run_campaign",
+            "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from wily_rooster.extraction.types import ExtractionSummary
+            from poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=10, total_extracted=8,
@@ -822,9 +822,9 @@ class TestExtractSubcommand:
         dir2.mkdir()
         # Contract test: real orchestrator tested in test_extraction_campaign.py
         with patch(
-            "wily_rooster.cli.commands.run_campaign",
+            "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from wily_rooster.extraction.types import ExtractionSummary
+            from poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=0, total_extracted=0,
@@ -846,9 +846,9 @@ class TestExtractSubcommand:
         project_dir.mkdir()
         # Contract test: real orchestrator tested in test_extraction_campaign.py
         with patch(
-            "wily_rooster.cli.commands.run_campaign",
+            "poule.cli.commands.run_campaign",
         ) as mock_run:
-            from wily_rooster.extraction.types import ExtractionSummary
+            from poule.extraction.types import ExtractionSummary
             mock_run.return_value = ExtractionSummary(
                 schema_version=1, record_type="extraction_summary",
                 total_theorems_found=0, total_extracted=0,
@@ -877,7 +877,7 @@ class TestExtractDepsSubcommand:
         output_file = tmp_path / "deps.jsonl"
         # Contract test: real extract_dependency_graph tested in test_extraction_dependency_graph.py
         with patch(
-            "wily_rooster.cli.commands.extract_dependency_graph",
+            "poule.cli.commands.extract_dependency_graph",
         ):
             result = runner.invoke(cli, [
                 "extract-deps", str(input_file), "--output", str(output_file),
@@ -907,9 +907,9 @@ class TestQualityReportSubcommand:
         input_file.write_text("{}\n")
         # Contract test: real generate_quality_report tested in test_extraction_reporting.py
         with patch(
-            "wily_rooster.cli.commands.generate_quality_report",
+            "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from wily_rooster.extraction.types import (
+            from poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(
@@ -931,9 +931,9 @@ class TestQualityReportSubcommand:
         input_file.write_text("{}\n")
         # Contract test: real generate_quality_report tested in test_extraction_reporting.py
         with patch(
-            "wily_rooster.cli.commands.generate_quality_report",
+            "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from wily_rooster.extraction.types import (
+            from poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(
@@ -964,9 +964,9 @@ class TestQualityReportSubcommand:
         output_file = tmp_path / "report.json"
         # Contract test: real generate_quality_report tested in test_extraction_reporting.py
         with patch(
-            "wily_rooster.cli.commands.generate_quality_report",
+            "poule.cli.commands.generate_quality_report",
         ) as mock_report:
-            from wily_rooster.extraction.types import (
+            from poule.extraction.types import (
                 DistributionStats, QualityReport, TacticFrequency,
             )
             mock_report.return_value = QualityReport(

@@ -137,4 +137,4 @@ Then: `900 / 700 = 1.29 < 1.8` → returns `True` (candidate passes).
 - Use `hashlib.md5` for all hashing.
 - Histograms as `dict[str, int]` — Python dicts are efficient for sparse representations.
 - Cosine similarity via manual sparse dot product (no NumPy dependency needed for this).
-- Package location: `src/wily_rooster/channels/`.
+- Package location: `src/poule/channels/`.

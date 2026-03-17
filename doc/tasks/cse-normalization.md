@@ -22,7 +22,7 @@ The following must be implemented before CSE normalization:
 
 ```
 src/
-  wily_rooster/
+  poule/
     normalization/
       __init__.py
       cse.py              # CSE algorithm: hash_subtree, count_frequencies, cse_replace, cse_normalize
@@ -34,7 +34,7 @@ test/
   test_cse.py              # All CSE tests
 ```
 
-The CSE module (`src/wily_rooster/normalization/cse.py`) exports one public function:
+The CSE module (`src/poule/normalization/cse.py`) exports one public function:
 
 ```python
 def cse_normalize(tree: ExprTree) -> ExprTree:

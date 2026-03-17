@@ -141,4 +141,4 @@ When the `--deps` flag is passed to the extraction CLI, the campaign orchestrato
 
 - Use a `dict` as an ordered set for deduplication (insertion order preserved in Python 3.7+).
 - Read the input file line by line to avoid loading the full dataset into memory.
-- Package location: `src/wily_rooster/extraction/dependency_graph.py`.
+- Package location: `src/poule/extraction/dependency_graph.py`.

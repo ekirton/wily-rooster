@@ -1,7 +1,7 @@
 """TDD tests for SQLite storage layer (specification/storage.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until the production modules exist under src/wily_rooster/storage/.
+until the production modules exist under src/poule/storage/.
 
 Covers: schema creation, IndexWriter (write path), IndexReader (read path),
 error hierarchy, version validation, batch transaction protocol, and FTS5
@@ -21,8 +21,8 @@ import pytest
 # Imports from production code (TDD — will fail until implemented)
 # ---------------------------------------------------------------------------
 
-from wily_rooster.storage import IndexWriter, IndexReader
-from wily_rooster.storage.errors import (
+from poule.storage import IndexWriter, IndexReader
+from poule.storage.errors import (
     StorageError,
     IndexNotFoundError,
     IndexVersionError,

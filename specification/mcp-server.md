@@ -502,9 +502,9 @@ Response:
 - Use `@server.tool()` decorator pattern for tool registration.
 - Use `asyncio` for the server event loop.
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` for search response types.
-- Proof interaction responses use `serialize_*` functions from `wily_rooster.serialization.serialize`.
+- Proof interaction responses use `serialize_*` functions from `poule.serialization.serialize`.
 - Proof interaction handler functions are `async` to match the session manager's async interface.
 - Visualization handler functions are `async` (session resolution is async); the renderer call itself is synchronous.
-- Package location: `src/wily_rooster/server/`.
+- Package location: `src/poule/server/`.
 - Handler naming convention: `handle_<tool_name>` (e.g., `handle_open_proof_session`, `handle_visualize_proof_state`).
-- Visualization handlers import from `wily_rooster.rendering.mermaid_renderer`.
+- Visualization handlers import from `poule.rendering.mermaid_renderer`.

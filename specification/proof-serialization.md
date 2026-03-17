@@ -465,4 +465,4 @@ Output:
 - Implement serialization functions per type (e.g., `serialize_proof_state(state) → str`) rather than relying on generic `dataclasses.asdict()`, to enforce field ordering and validation.
 - Use `datetime.isoformat()` with `timespec='seconds'` for ISO 8601 timestamps. Ensure UTC timezone.
 - For deterministic field ordering, construct dictionaries using `collections.OrderedDict` or rely on Python 3.7+ dict insertion order with explicit key ordering in the constructor.
-- Package location: `src/wily_rooster/serialization/`.
+- Package location: `src/poule/serialization/`.

@@ -210,4 +210,4 @@ resume_extract("/data/stdlib.jsonl")
 - Use `json.load()` / `json.dump()` for checkpoint read/write.
 - Catch `json.JSONDecodeError` for checkpoint corruption detection.
 - Use `pathlib.Path` for checkpoint path derivation (`output_path.with_suffix(output_path.suffix + '.checkpoint')`).
-- Package location: `src/wily_rooster/extraction/checkpoint.py`.
+- Package location: `src/poule/extraction/checkpoint.py`.

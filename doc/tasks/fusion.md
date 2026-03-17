@@ -33,7 +33,7 @@ The following must be implemented (or at least have their interfaces defined) be
 
 ```
 src/
-  wily_rooster/
+  poule/
     fusion/
       __init__.py          # Re-exports public API
       rrf.py               # Reciprocal Rank Fusion
@@ -57,7 +57,7 @@ test/
 
 This module defines the `same_category` function shared between collapse-match and the TED cost model.
 
-**File**: `src/wily_rooster/fusion/categories.py`
+**File**: `src/poule/fusion/categories.py`
 
 ```python
 from enum import Enum, auto
@@ -92,7 +92,7 @@ def same_category(label_a: NodeLabel, label_b: NodeLabel) -> bool:
 
 ### Step 2: Implement `collapse_match.py` — Collapse-Match Similarity
 
-**File**: `src/wily_rooster/fusion/collapse_match.py`
+**File**: `src/poule/fusion/collapse_match.py`
 
 ```python
 def collapse_match(query: ExprTree, candidate: ExprTree, _depth: int = 0) -> float:
@@ -139,7 +139,7 @@ def collapse_match(query: ExprTree, candidate: ExprTree, _depth: int = 0) -> flo
 
 ### Step 3: Implement `fine_ranking.py` — Fine-Ranking Metric Fusion
 
-**File**: `src/wily_rooster/fusion/fine_ranking.py`
+**File**: `src/poule/fusion/fine_ranking.py`
 
 ```python
 import logging
@@ -198,7 +198,7 @@ def structural_score_without_ted(
 
 ### Step 4: Implement `rrf.py` — Reciprocal Rank Fusion
 
-**File**: `src/wily_rooster/fusion/rrf.py`
+**File**: `src/poule/fusion/rrf.py`
 
 ```python
 from dataclasses import dataclass
@@ -248,7 +248,7 @@ return [FusedResult(decl_id=did, rrf_score=score, fused_rank=i+1)
 
 ### Step 5: Implement `__init__.py` — Public API
 
-**File**: `src/wily_rooster/fusion/__init__.py`
+**File**: `src/poule/fusion/__init__.py`
 
 ```python
 from .rrf import rrf_fuse, FusedResult
@@ -469,7 +469,7 @@ __all__ = [
 
 **Risk**: If `same_category` diverges between the fusion collapse-match and the TED cost model, scores become inconsistent.
 
-**Mitigation**: Implement categories in a single shared module (`categories.py`) imported by both fusion and TED code. The TED task must import from `wily_rooster.fusion.categories` (or a shared location if refactored later).
+**Mitigation**: Implement categories in a single shared module (`categories.py`) imported by both fusion and TED code. The TED task must import from `poule.fusion.categories` (or a shared location if refactored later).
 
 ### Risk 5: LInt not in spec categories
 

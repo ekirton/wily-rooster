@@ -366,7 +366,7 @@ Output: Diagram with 50 nodes + summary node `… and {N} more` (where N is the 
 
 ## 10. Language-Specific Notes (Python)
 
-- Package location: `src/wily_rooster/rendering/`.
+- Package location: `src/poule/rendering/`.
 - Module: `mermaid_renderer.py` — all four rendering functions in one module.
 - `DetailLevel` as `enum.Enum` with string values.
 - All rendering functions are synchronous (pure computation, no I/O).

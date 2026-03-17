@@ -7,21 +7,21 @@ Tests target the public API defined in specification/fusion.md:
   - structural_score(wl, ted, cm, cj, has_ted) -> float
   - rrf_fuse(ranked_lists, k=60) -> list of (decl_id, rrf_score) sorted desc
 
-Implementation will live in src/wily_rooster/fusion/fusion.py.
+Implementation will live in src/poule/fusion/fusion.py.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from wily_rooster.fusion.fusion import (
+from poule.fusion.fusion import (
     clamp_score,
     node_category,
     collapse_match,
     structural_score,
     rrf_fuse,
 )
-from wily_rooster.models.labels import (
+from poule.models.labels import (
     LAbs,
     LApp,
     LCase,
@@ -38,8 +38,8 @@ from wily_rooster.models.labels import (
     LRel,
     LSort,
 )
-from wily_rooster.models.enums import SortKind
-from wily_rooster.models.tree import TreeNode, ExprTree
+from poule.models.enums import SortKind
+from poule.models.tree import TreeNode, ExprTree
 
 
 # ---------------------------------------------------------------------------

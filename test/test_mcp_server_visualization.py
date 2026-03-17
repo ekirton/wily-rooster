@@ -8,9 +8,9 @@ Architecture: doc/architecture/mcp-server.md (Visualization Tool Signatures)
 Renderer spec: specification/mermaid-renderer.md
 
 Import paths under test:
-  wily_rooster.server.handlers  (handle_visualize_proof_state, etc.)
-  wily_rooster.server.validation (validate_detail_level, validate_positive_int)
-  wily_rooster.server.errors    (PROOF_INCOMPLETE, DIAGRAM_TRUNCATED)
+  poule.server.handlers  (handle_visualize_proof_state, etc.)
+  poule.server.validation (validate_detail_level, validate_positive_int)
+  poule.server.errors    (PROOF_INCOMPLETE, DIAGRAM_TRUNCATED)
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_handlers():
-    from wily_rooster.server.handlers import (
+    from poule.server.handlers import (
         handle_visualize_proof_state,
         handle_visualize_proof_tree,
         handle_visualize_dependencies,
@@ -41,7 +41,7 @@ def _import_handlers():
 
 
 def _import_validation():
-    from wily_rooster.server.validation import (
+    from poule.server.validation import (
         validate_string,
         validate_detail_level,
     )
@@ -49,7 +49,7 @@ def _import_validation():
 
 
 def _import_errors():
-    from wily_rooster.server.errors import (
+    from poule.server.errors import (
         format_error,
         NOT_FOUND,
         PROOF_INCOMPLETE,
@@ -60,7 +60,7 @@ def _import_errors():
 
 
 def _import_types():
-    from wily_rooster.session.types import (
+    from poule.session.types import (
         Goal,
         Hypothesis,
         ProofState,
@@ -71,7 +71,7 @@ def _import_types():
 
 
 def _import_renderer_types():
-    from wily_rooster.rendering.types import DetailLevel, RenderedDiagram, SequenceEntry
+    from poule.rendering.types import DetailLevel, RenderedDiagram, SequenceEntry
     return DetailLevel, RenderedDiagram, SequenceEntry
 
 
@@ -282,7 +282,7 @@ class TestHandleVisualizeProofState:
     async def test_session_not_found_returns_error(self):
         """Spec §4.4: on unknown session, returns SESSION_NOT_FOUND."""
         handle_vis_state, *_ = _import_handlers()
-        from wily_rooster.session.errors import SessionError, SESSION_NOT_FOUND
+        from poule.session.errors import SessionError, SESSION_NOT_FOUND
         mgr = AsyncMock()
         mgr.observe_state = AsyncMock(
             side_effect=SessionError(SESSION_NOT_FOUND, "not found"),
@@ -299,7 +299,7 @@ class TestHandleVisualizeProofState:
     async def test_step_out_of_range_returns_error(self):
         """Spec §4.4: on step out of range, returns STEP_OUT_OF_RANGE."""
         handle_vis_state, *_ = _import_handlers()
-        from wily_rooster.session.errors import SessionError, STEP_OUT_OF_RANGE
+        from poule.session.errors import SessionError, STEP_OUT_OF_RANGE
         mgr = AsyncMock()
         mgr.get_state_at_step = AsyncMock(
             side_effect=SessionError(STEP_OUT_OF_RANGE, "out of range"),
@@ -371,7 +371,7 @@ class TestHandleVisualizeProofTree:
     async def test_session_not_found_returns_error(self):
         """Spec §4.4: on unknown session, returns session error."""
         _, handle_vis_tree, *_ = _import_handlers()
-        from wily_rooster.session.errors import SessionError, SESSION_NOT_FOUND
+        from poule.session.errors import SessionError, SESSION_NOT_FOUND
         mgr = AsyncMock()
         mgr.extract_trace = AsyncMock(
             side_effect=SessionError(SESSION_NOT_FOUND, "not found"),
@@ -411,7 +411,7 @@ class TestHandleVisualizeDependencies:
     async def test_not_found_returns_error(self):
         """Spec §4.4: declaration not found returns NOT_FOUND."""
         *_, handle_vis_deps, _ = _import_handlers()
-        from wily_rooster.server.errors import NOT_FOUND
+        from poule.server.errors import NOT_FOUND
         index = MagicMock()
         index.find_related = MagicMock(side_effect=Exception("not found"))
         renderer = _make_mock_renderer()
@@ -527,7 +527,7 @@ class TestHandleVisualizeProofSequence:
     async def test_session_not_found_returns_error(self):
         """Spec §4.4: on unknown session, returns session error."""
         *_, handle_vis_seq = _import_handlers()
-        from wily_rooster.session.errors import SessionError, SESSION_NOT_FOUND
+        from poule.session.errors import SessionError, SESSION_NOT_FOUND
         mgr = AsyncMock()
         mgr.extract_trace = AsyncMock(
             side_effect=SessionError(SESSION_NOT_FOUND, "not found"),
@@ -544,7 +544,7 @@ class TestHandleVisualizeProofSequence:
     async def test_no_original_script_returns_proof_incomplete(self):
         """Spec §4.4: session with no original script returns PROOF_INCOMPLETE."""
         *_, handle_vis_seq = _import_handlers()
-        from wily_rooster.session.errors import SessionError, STEP_OUT_OF_RANGE
+        from poule.session.errors import SessionError, STEP_OUT_OF_RANGE
         mgr = AsyncMock()
         mgr.extract_trace = AsyncMock(
             side_effect=SessionError(STEP_OUT_OF_RANGE, "no complete proof to trace"),
@@ -615,7 +615,7 @@ class TestVisualizationErrors:
     async def test_visualization_reuses_session_error_codes(self):
         """Spec §5.3: session errors use same codes as proof interaction."""
         handle_vis_state, *_ = _import_handlers()
-        from wily_rooster.session.errors import SessionError, SESSION_EXPIRED
+        from poule.session.errors import SessionError, SESSION_EXPIRED
         mgr = AsyncMock()
         mgr.observe_state = AsyncMock(
             side_effect=SessionError(SESSION_EXPIRED, "expired"),

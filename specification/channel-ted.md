@@ -137,4 +137,4 @@ Then: `ted = 0.5` (one same-category rename).
 
 - Implement Zhang-Shasha with explicit stack/DP tables (avoid deep recursion).
 - Use `@functools.lru_cache` or similar for leftmost leaf computation if beneficial.
-- Package location: `src/wily_rooster/channels/`.
+- Package location: `src/poule/channels/`.

@@ -150,4 +150,4 @@ Then: Result is `LSort(SortKind.PROP)` — SProp maps to PROP.
 
 - Implement `ConstrNode` variants as a union of frozen dataclasses, or use a tagged union pattern.
 - `constr_to_tree` should be recursive with Python's default recursion limit (1000) as the practical depth bound. For terms exceeding this, catch `RecursionError` and raise `NormalizationError`.
-- Package location: `src/wily_rooster/normalization/`.
+- Package location: `src/poule/normalization/`.

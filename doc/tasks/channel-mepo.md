@@ -177,7 +177,7 @@ The MePo index must be initialized once at server startup (when the storage read
 
 ```
 src/
-  wily_rooster/
+  poule/
     __init__.py
     data_structures.py          # ExprTree, NodeLabel, ScoredResult, type aliases
     storage/
@@ -191,7 +191,7 @@ src/
     fusion.py                   # RRF and metric fusion
 ```
 
-### `src/wily_rooster/channels/mepo.py` Contents
+### `src/poule/channels/mepo.py` Contents
 
 | Component | Type | Description |
 |-----------|------|-------------|

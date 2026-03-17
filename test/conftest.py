@@ -1,4 +1,4 @@
-"""Shared test fixtures and tree-building helpers for wily-rooster tests.
+"""Shared test fixtures and tree-building helpers for poule tests.
 
 These helpers construct expression trees without importing production code,
 following TDD practice — tests are written before the implementation exists.
@@ -19,7 +19,7 @@ import pytest
 @pytest.fixture
 def make_leaf():
     """Return a factory that creates a leaf TreeNode with no children."""
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
 
     def _make(label):
         return TreeNode(label=label, children=[])
@@ -30,7 +30,7 @@ def make_leaf():
 @pytest.fixture
 def make_node():
     """Return a factory that creates a TreeNode with children."""
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
 
     def _make(label, children):
         return TreeNode(label=label, children=children)
@@ -41,7 +41,7 @@ def make_node():
 @pytest.fixture
 def make_tree():
     """Return a factory that creates an ExprTree from a root node."""
-    from wily_rooster.models.tree import ExprTree, node_count as _nc
+    from poule.models.tree import ExprTree, node_count as _nc
 
     def _make(root):
         return ExprTree(root=root, node_count=_nc(root))
@@ -52,9 +52,9 @@ def make_tree():
 @pytest.fixture
 def sample_prod_tree():
     """LProd(LSort(PROP), LRel(0)) — a simple 3-node tree."""
-    from wily_rooster.models.labels import LProd, LSort, LRel
-    from wily_rooster.models.enums import SortKind
-    from wily_rooster.models.tree import TreeNode, ExprTree
+    from poule.models.labels import LProd, LSort, LRel
+    from poule.models.enums import SortKind
+    from poule.models.tree import TreeNode, ExprTree
 
     root = TreeNode(
         label=LProd(),
@@ -69,8 +69,8 @@ def sample_prod_tree():
 @pytest.fixture
 def sample_app_tree():
     """LApp(LApp(LConst(Nat.add), LRel(1)), LRel(2)) — currified application, 5 nodes."""
-    from wily_rooster.models.labels import LApp, LConst, LRel
-    from wily_rooster.models.tree import TreeNode, ExprTree
+    from poule.models.labels import LApp, LConst, LRel
+    from poule.models.tree import TreeNode, ExprTree
 
     inner = TreeNode(
         label=LApp(),

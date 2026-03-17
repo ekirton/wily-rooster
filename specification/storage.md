@@ -215,4 +215,4 @@ node_counts = reader.load_declaration_node_counts()  # into memory
 - Use `executemany` for batch inserts.
 - JSON serialization/deserialization for `symbol_set`, `histogram` fields via `json.dumps`/`json.loads`.
 - Tree serialization format for `constr_tree` BLOB: use `pickle` or `msgpack` — must round-trip without data loss.
-- Package location: `src/wily_rooster/storage/`.
+- Package location: `src/poule/storage/`.

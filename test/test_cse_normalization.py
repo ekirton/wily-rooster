@@ -1,7 +1,7 @@
 """TDD tests for CSE normalization (specification/cse-normalization.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/normalization/cse.py and its dependencies exist.
+until src/poule/normalization/cse.py and its dependencies exist.
 
 The tests exercise the public API:
     cse_normalize(tree: ExprTree) -> None  (in-place mutation)
@@ -32,23 +32,23 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _leaf(label):
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
     return TreeNode(label=label, children=[])
 
 
 def _node(label, children):
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
     return TreeNode(label=label, children=children)
 
 
 def _tree(root):
-    from wily_rooster.models.tree import ExprTree, node_count
+    from poule.models.tree import ExprTree, node_count
     return ExprTree(root=root, node_count=node_count(root))
 
 
 def _prepare(tree):
     """Apply recompute_depths and assign_node_ids to set metadata."""
-    from wily_rooster.models.tree import recompute_depths, assign_node_ids
+    from poule.models.tree import recompute_depths, assign_node_ids
     recompute_depths(tree)
     assign_node_ids(tree)
     return tree
@@ -56,7 +56,7 @@ def _prepare(tree):
 
 def _collect_labels(node):
     """Collect labels in pre-order."""
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
     result = [node.label]
     for c in node.children:
         result.extend(_collect_labels(c))
@@ -79,9 +79,9 @@ class TestNoRepeatedSubexpressions:
 
     def test_unique_subtrees_preserved(self, make_tree):
         """A tree with all unique subtrees has no replacements."""
-        from wily_rooster.models.labels import LProd, LInd, LSort
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LInd, LSort
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Prod(Ind("nat"), Sort(PROP)) -- all leaves are different types/payloads
         root = _node(LProd(), [
@@ -110,8 +110,8 @@ class TestRepeatedNonConstantReplacement:
     def test_second_occurrence_becomes_cse_var(self):
         """Spec example: Prod(App(Ind(list), Ind(nat)), App(Ind(list), Ind(nat)))
         -> Prod(App(Ind(list), Ind(nat)), LCseVar(0))"""
-        from wily_rooster.models.labels import LProd, LApp, LInd, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LApp, LInd, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         def _make_app_list_nat():
             return _node(LApp(), [
@@ -141,9 +141,9 @@ class TestRepeatedNonConstantReplacement:
 
     def test_three_occurrences_second_and_third_replaced(self):
         """When a subtree appears 3 times, occurrences 2 and 3 become LCseVar(0)."""
-        from wily_rooster.models.labels import LProd, LSort, LRel, LCseVar, LApp
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LSort, LRel, LCseVar, LApp
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Spec example: LProd(LSort(PROP), LRel(0)) appears 3 times
         def _make_prod_subtree():
@@ -188,9 +188,9 @@ class TestMultipleDistinctReplacements:
 
     def test_two_different_repeated_subtrees_get_ids_0_and_1(self):
         """Two distinct repeated subtrees get sequential ids 0 and 1."""
-        from wily_rooster.models.labels import LApp, LProd, LSort, LRel, LCseVar
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LProd, LSort, LRel, LCseVar
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Subtree A: Prod(Sort(PROP), Rel(0))
         def _sub_a():
@@ -235,8 +235,8 @@ class TestConstantsPreserved:
 
     def test_lconst_not_replaced(self):
         """Duplicated LConst nodes are never replaced."""
-        from wily_rooster.models.labels import LApp, LConst, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LConst, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LApp(), [
             _leaf(LConst("Coq.Init.Nat.add")),
@@ -254,8 +254,8 @@ class TestConstantsPreserved:
 
     def test_lind_not_replaced(self):
         """Duplicated LInd nodes are never replaced."""
-        from wily_rooster.models.labels import LApp, LInd, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LInd, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LApp(), [
             _leaf(LInd("Coq.Init.Datatypes.nat")),
@@ -271,8 +271,8 @@ class TestConstantsPreserved:
 
     def test_lconstruct_not_replaced(self):
         """Duplicated LConstruct nodes are never replaced."""
-        from wily_rooster.models.labels import LApp, LConstruct, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LConstruct, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LApp(), [
             _leaf(LConstruct("Coq.Init.Datatypes.nat", 0)),
@@ -296,11 +296,11 @@ class TestMixedConstantsAndNonConstants:
     def test_constants_kept_non_constants_replaced(self):
         """In a tree with repeated constants AND repeated non-constant subtrees,
         only the non-constants are replaced."""
-        from wily_rooster.models.labels import (
+        from poule.models.labels import (
             LApp, LProd, LInd, LSort, LRel, LCseVar,
         )
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Repeated non-constant: Prod(Sort(PROP), Rel(0))
         def _sub():
@@ -342,9 +342,9 @@ class TestSingleNodeTree:
 
     def test_single_leaf_unchanged(self):
         """A single-node tree has no duplicates and is returned as-is."""
-        from wily_rooster.models.labels import LSort, LCseVar
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LSort, LCseVar
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         root = _leaf(LSort(SortKind.PROP))
         tree = _prepare(_tree(root))
@@ -357,8 +357,8 @@ class TestSingleNodeTree:
 
     def test_single_const_leaf_unchanged(self):
         """A single LConst leaf is returned unchanged."""
-        from wily_rooster.models.labels import LConst
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LConst
+        from poule.normalization.cse import cse_normalize
 
         root = _leaf(LConst("Coq.Init.Nat.add"))
         tree = _prepare(_tree(root))
@@ -377,8 +377,8 @@ class TestNodeCountUpdated:
 
     def test_node_count_reduced_after_cse(self):
         """node_count reflects the smaller tree after CSE replacement."""
-        from wily_rooster.models.labels import LProd, LApp, LInd
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LApp, LInd
+        from poule.normalization.cse import cse_normalize
 
         def _make_app_list_nat():
             return _node(LApp(), [
@@ -408,8 +408,8 @@ class TestDepthsAndNodeIdsRecomputed:
 
     def test_depths_correct_after_cse(self):
         """After CSE, depth values reflect the new tree structure."""
-        from wily_rooster.models.labels import LProd, LApp, LInd
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LApp, LInd
+        from poule.normalization.cse import cse_normalize
 
         def _make_app_list_nat():
             return _node(LApp(), [
@@ -437,8 +437,8 @@ class TestDepthsAndNodeIdsRecomputed:
 
     def test_node_ids_contiguous_after_cse(self):
         """After CSE, node_ids are contiguous 0..n-1 in pre-order."""
-        from wily_rooster.models.labels import LProd, LApp, LInd
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LApp, LInd
+        from poule.normalization.cse import cse_normalize
 
         def _make_app_list_nat():
             return _node(LApp(), [
@@ -468,9 +468,9 @@ class TestPreOrderReplacement:
     def test_first_preorder_occurrence_preserved(self):
         """The first occurrence in pre-order (leftmost) is preserved,
         not the last or any other."""
-        from wily_rooster.models.labels import LApp, LProd, LSort, LRel, LCseVar
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LProd, LSort, LRel, LCseVar
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         def _sub():
             return _node(LProd(), [
@@ -502,9 +502,9 @@ class TestCseVarIsLeaf:
 
     def test_cse_var_has_no_children(self):
         """LCseVar nodes introduced by CSE have zero children."""
-        from wily_rooster.models.labels import LApp, LProd, LSort, LRel, LCseVar
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LProd, LSort, LRel, LCseVar
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         def _sub():
             return _node(LProd(), [
@@ -538,9 +538,9 @@ class TestEmptyTree:
         The exact representation of 'empty' depends on ExprTree constraints.
         If ExprTree requires node_count >= 1, this test may need adjustment.
         """
-        from wily_rooster.models.labels import LSort
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LSort
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Minimal tree — single node, should be a no-op
         root = _leaf(LSort(SortKind.PROP))
@@ -562,9 +562,9 @@ class TestRecursionError:
     def test_deep_recursion_raises_normalization_error(self):
         """A deeply nested tree that exceeds recursion limit raises
         NormalizationError, not RecursionError."""
-        from wily_rooster.models.labels import LApp, LRel
-        from wily_rooster.normalization.cse import cse_normalize
-        from wily_rooster.normalization.errors import NormalizationError
+        from poule.models.labels import LApp, LRel
+        from poule.normalization.cse import cse_normalize
+        from poule.normalization.errors import NormalizationError
 
         # Build a very deep chain: App(App(App(...Rel(0)...)))
         import sys
@@ -590,8 +590,8 @@ class TestSpecExamples:
         """Spec example: nat -> nat -> nat.
         Prod(Ind(nat), Prod(Ind(nat), Ind(nat)))
         All nodes are constants -> no replacement."""
-        from wily_rooster.models.labels import LProd, LInd, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LInd, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LProd(), [
             _leaf(LInd("Coq.Init.Datatypes.nat")),
@@ -613,8 +613,8 @@ class TestSpecExamples:
 
     def test_nat_arrow_bool_unchanged(self):
         """Spec example: nat -> bool. No duplicated non-constant subtrees."""
-        from wily_rooster.models.labels import LProd, LInd, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LInd, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LProd(), [
             _leaf(LInd("Coq.Init.Datatypes.nat")),
@@ -633,8 +633,8 @@ class TestSpecExamples:
         Prod(App(Ind(list), Ind(nat)), App(Ind(list), Ind(nat)))
         -> Prod(App(Ind(list), Ind(nat)), CseVar(0))
         Node count 7 -> 4."""
-        from wily_rooster.models.labels import LProd, LApp, LInd, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LProd, LApp, LInd, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         def _make_app_list_nat():
             return _node(LApp(), [
@@ -673,8 +673,8 @@ class TestAllConstantTree:
     def test_all_constants_no_replacement(self):
         """A tree made entirely of constant labels has no replacements,
         even when subtrees are structurally repeated."""
-        from wily_rooster.models.labels import LApp, LConst, LInd, LConstruct, LCseVar
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.labels import LApp, LConst, LInd, LConstruct, LCseVar
+        from poule.normalization.cse import cse_normalize
 
         root = _node(LApp(), [
             _node(LApp(), [
@@ -710,11 +710,11 @@ class TestCseVarIdSequencing:
 
     def test_ids_start_at_zero_and_increment(self):
         """CSE variable ids are assigned sequentially starting from 0."""
-        from wily_rooster.models.labels import (
+        from poule.models.labels import (
             LApp, LProd, LSort, LRel, LCseVar, LFix,
         )
-        from wily_rooster.models.enums import SortKind
-        from wily_rooster.normalization.cse import cse_normalize
+        from poule.models.enums import SortKind
+        from poule.normalization.cse import cse_normalize
 
         # Two distinct non-constant subtrees, each repeated twice
         def _sub_a():

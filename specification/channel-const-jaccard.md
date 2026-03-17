@@ -90,4 +90,4 @@ Then: `0 / 2 = 0.0`
 ## 7. Language-Specific Notes (Python)
 
 - Use Python `set` operations: `&` for intersection, `|` for union.
-- Package location: `src/wily_rooster/channels/`.
+- Package location: `src/poule/channels/`.

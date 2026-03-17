@@ -1,7 +1,7 @@
 """TDD tests for extraction reporting (specification/extraction-reporting.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until the production modules exist under src/wily_rooster/extraction/.
+until the production modules exist under src/poule/extraction/.
 
 Covers: quality report generation, premise coverage, proof length distribution,
 tactic keyword extraction, tactic vocabulary frequency, scope filter, benchmark
@@ -75,7 +75,7 @@ class TestGenerateQualityReport:
     """generate_quality_report reads ExtractionRecords and returns a QualityReport."""
 
     def test_returns_quality_report_with_aggregate_metrics(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         records = [_make_extraction_record(project_id="proj-a") for _ in range(6)]
         records += [_make_extraction_record(project_id="proj-b") for _ in range(4)]
@@ -89,7 +89,7 @@ class TestGenerateQualityReport:
         assert hasattr(report, "per_project")
 
     def test_per_project_entries_match_distinct_project_ids(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         records = [_make_extraction_record(project_id="proj-a") for _ in range(6)]
         records += [_make_extraction_record(project_id="proj-b") for _ in range(4)]
@@ -102,7 +102,7 @@ class TestGenerateQualityReport:
         assert project_ids == {"proj-a", "proj-b"}
 
     def test_filters_by_proof_trace_record_type(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         records = [_make_extraction_record()]
         # Add a non-proof-trace record that should be ignored.
@@ -124,7 +124,7 @@ class TestPremiseCoverage:
 
     def test_spec_example_85_of_100_steps(self, tmp_path):
         """Given 100 tactic steps where 85 have premises, coverage is 0.85."""
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         # Build a single record with 100 tactic steps (step_index 1..100).
         steps = [
@@ -151,7 +151,7 @@ class TestPremiseCoverage:
         assert report.premise_coverage == pytest.approx(0.85)
 
     def test_returns_float_in_unit_interval(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         records = [_make_extraction_record()]
         path = _write_jsonl(tmp_path / "output.jsonl", records)
@@ -162,7 +162,7 @@ class TestPremiseCoverage:
 
     def test_zero_when_no_tactic_steps(self, tmp_path):
         """Returns 0.0 when no tactic steps exist (only step 0)."""
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         steps = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "T"}], "premises": []}
@@ -184,7 +184,7 @@ class TestProofLengthDistribution:
     """DistributionStats from total_steps: min, max, mean, median, p25, p75, p95."""
 
     def test_single_record_all_stats_equal(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         records = [_make_extraction_record(total_steps=7)]
         path = _write_jsonl(tmp_path / "output.jsonl", records)
@@ -201,7 +201,7 @@ class TestProofLengthDistribution:
         assert dist.p95 == pytest.approx(7.0)
 
     def test_multiple_records_stats_populated(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         step_counts = [1, 3, 5, 8, 12, 20, 50, 100, 200, 342]
         records = [
@@ -255,28 +255,28 @@ class TestTacticKeywordExtraction:
         ids=["simple-rewrite", "compound-semicolon", "apply-with-parens"],
     )
     def test_spec_examples(self, tactic_text, expected):
-        from wily_rooster.extraction.reporting import extract_tactic_keywords
+        from poule.extraction.reporting import extract_tactic_keywords
 
         result = extract_tactic_keywords(tactic_text)
 
         assert result == expected
 
     def test_result_is_always_lowercase(self):
-        from wily_rooster.extraction.reporting import extract_tactic_keywords
+        from poule.extraction.reporting import extract_tactic_keywords
 
         result = extract_tactic_keywords("Rewrite foo.")
 
         assert result == ["rewrite"]
 
     def test_strips_trailing_comma_and_semicolon(self):
-        from wily_rooster.extraction.reporting import extract_tactic_keywords
+        from poule.extraction.reporting import extract_tactic_keywords
 
         result = extract_tactic_keywords("intro,")
 
         assert result == ["intro"]
 
     def test_compound_produces_multiple_keywords(self):
-        from wily_rooster.extraction.reporting import extract_tactic_keywords
+        from poule.extraction.reporting import extract_tactic_keywords
 
         result = extract_tactic_keywords("simpl; rewrite H; reflexivity.")
 
@@ -292,7 +292,7 @@ class TestTacticVocabularyFrequency:
     """Count tactic keywords sorted by count descending, ties by lexicographic order."""
 
     def test_sorted_by_count_descending(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         # Create steps with known tactic distribution.
         steps = [
@@ -322,7 +322,7 @@ class TestTacticVocabularyFrequency:
         assert vocab[2].count == 1
 
     def test_ties_broken_by_lexicographic_order(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         steps = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "T"}], "premises": []}
@@ -348,7 +348,7 @@ class TestTacticVocabularyFrequency:
         assert vocab[0].count == vocab[1].count == 2
 
     def test_one_entry_per_distinct_keyword(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         steps = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "T"}], "premises": []}
@@ -380,7 +380,7 @@ class TestScopeFilter:
     """ScopeFilter with name_pattern and module_prefixes — conjunction semantics."""
 
     def test_both_filters_match_includes_theorem(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=".*comm.*", module_prefixes=["Coq.Arith"])
 
@@ -390,7 +390,7 @@ class TestScopeFilter:
         )
 
     def test_name_pattern_mismatch_excludes_theorem(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=".*comm.*", module_prefixes=["Coq.Arith"])
 
@@ -401,7 +401,7 @@ class TestScopeFilter:
         )
 
     def test_module_prefix_mismatch_excludes_theorem(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=".*comm.*", module_prefixes=["Coq.Arith"])
 
@@ -412,14 +412,14 @@ class TestScopeFilter:
         )
 
     def test_neither_filter_set_matches_all(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=None, module_prefixes=None)
 
         assert sf.matches(name="Anything.Goes", module="Any.Module")
 
     def test_only_name_pattern_set(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=".*comm.*", module_prefixes=None)
 
@@ -427,7 +427,7 @@ class TestScopeFilter:
         assert not sf.matches(name="Foo.add_zero", module="Foo")
 
     def test_only_module_prefixes_set(self):
-        from wily_rooster.extraction.types import ScopeFilter
+        from poule.extraction.types import ScopeFilter
 
         sf = ScopeFilter(name_pattern=None, module_prefixes=["Coq.Arith"])
 
@@ -445,7 +445,7 @@ class TestBenchmarkDifficultySplit:
 
     def test_spec_example_30_50_20(self, tmp_path):
         """Given 100 proofs: 30 short, 50 medium, 20 long."""
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         records = []
         # 30 short (total_steps 1..5)
@@ -493,7 +493,7 @@ class TestBenchmarkDifficultySplit:
         ids=["min-short", "max-short", "min-medium", "max-medium", "min-long", "large-long"],
     )
     def test_boundary_classification(self, tmp_path, total_steps, expected_bin):
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         records = [_make_extraction_record(total_steps=total_steps)]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -511,7 +511,7 @@ class TestBenchmarkProjectSplit:
     """Project split groups ExtractionRecords by project_id."""
 
     def test_one_file_per_project(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         records = [
             _make_extraction_record(project_id="alpha"),
@@ -554,7 +554,7 @@ class TestBenchmarkDomainSplit:
         ],
     )
     def test_domain_classification(self, tmp_path, module_path, expected_domain):
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         records = [_make_extraction_record(module_path=module_path)]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -568,7 +568,7 @@ class TestBenchmarkDomainSplit:
         assert sum(1 for _ in open(output_file)) == 1
 
     def test_case_insensitive_matching(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         records = [_make_extraction_record(module_path="coq.arith.lowered")]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -581,7 +581,7 @@ class TestBenchmarkDomainSplit:
 
     def test_first_match_wins_for_multiple_patterns(self, tmp_path):
         """A proof matching multiple patterns is assigned to the first match."""
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         # "Arith" matches arithmetic (first), should not also appear in other bins.
         records = [_make_extraction_record(module_path="Coq.ArithAlgebra.Foo")]
@@ -605,7 +605,7 @@ class TestExportToHuggingFace:
 
     def test_preserves_all_fields(self, tmp_path):
         pytest.importorskip("datasets")
-        from wily_rooster.extraction.reporting import export_to_huggingface
+        from poule.extraction.reporting import export_to_huggingface
 
         records = [_make_extraction_record(theorem_name="T.foo", total_steps=5)]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -620,7 +620,7 @@ class TestExportToHuggingFace:
         pytest.importorskip("datasets")
         from datasets import load_from_disk
 
-        from wily_rooster.extraction.reporting import export_to_huggingface
+        from poule.extraction.reporting import export_to_huggingface
 
         records = [
             _make_extraction_record(theorem_name="A.a", total_steps=2),
@@ -638,7 +638,7 @@ class TestExportToHuggingFace:
         pytest.importorskip("datasets")
         from datasets import load_from_disk
 
-        from wily_rooster.extraction.reporting import export_to_huggingface
+        from poule.extraction.reporting import export_to_huggingface
 
         records = [_make_extraction_record(theorem_name="X.thm", project_id="proj-x")]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -660,7 +660,7 @@ class TestValidateTraces:
     """validate_traces replays tactics and compares states."""
 
     def test_reports_total_validated_and_failed(self, tmp_path):
-        from wily_rooster.extraction.reporting import validate_traces
+        from poule.extraction.reporting import validate_traces
 
         records = [_make_extraction_record()]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)
@@ -672,7 +672,7 @@ class TestValidateTraces:
         assert hasattr(result, "failures")
 
     def test_failure_includes_step_index_and_goals(self, tmp_path):
-        from wily_rooster.extraction.reporting import validate_traces
+        from poule.extraction.reporting import validate_traces
 
         # We cannot actually replay against Coq in unit tests, so we verify
         # the report structure. A failure entry should contain step_index,
@@ -701,7 +701,7 @@ class TestDeduplicate:
     """Deduplication by initial goal + tactic sequence after whitespace normalization."""
 
     def test_identical_goal_and_tactics_clustered(self, tmp_path):
-        from wily_rooster.extraction.reporting import deduplicate
+        from poule.extraction.reporting import deduplicate
 
         shared_steps = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "nat = nat"}], "premises": []},
@@ -723,7 +723,7 @@ class TestDeduplicate:
         assert 2 in cluster_sizes
 
     def test_different_tactics_not_clustered(self, tmp_path):
-        from wily_rooster.extraction.reporting import deduplicate
+        from poule.extraction.reporting import deduplicate
 
         steps_a = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "nat = nat"}], "premises": []},
@@ -750,7 +750,7 @@ class TestDeduplicate:
 
     def test_whitespace_normalization(self, tmp_path):
         """Tactic sequences identical after whitespace normalization are clustered."""
-        from wily_rooster.extraction.reporting import deduplicate
+        from poule.extraction.reporting import deduplicate
 
         steps_a = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "T"}], "premises": []},
@@ -771,7 +771,7 @@ class TestDeduplicate:
 
     def test_symmetric_and_transitive_clustering(self, tmp_path):
         """If A~B and B~C, then A, B, C are in the same cluster."""
-        from wily_rooster.extraction.reporting import deduplicate
+        from poule.extraction.reporting import deduplicate
 
         shared_steps = [
             {"step_index": 0, "tactic": "", "goals": [{"type": "T"}], "premises": []},
@@ -805,7 +805,7 @@ class TestErrorInvalidJsonLines:
     """Invalid JSON Lines raises ValueError with line number."""
 
     def test_invalid_json_raises_value_error_with_line_number(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         content = '{"record_type": "proof_trace"}\n{bad json\n'
         path = tmp_path / "bad.jsonl"
@@ -819,7 +819,7 @@ class TestErrorNoExtractionRecords:
     """No ExtractionRecords produces zero metrics."""
 
     def test_empty_input_returns_zero_metrics(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_quality_report
+        from poule.extraction.reporting import generate_quality_report
 
         path = _write_jsonl(tmp_path / "empty.jsonl", [])
 
@@ -828,7 +828,7 @@ class TestErrorNoExtractionRecords:
         assert report.premise_coverage == 0.0
 
     def test_empty_input_benchmark_produces_empty_output(self, tmp_path):
-        from wily_rooster.extraction.reporting import generate_benchmarks
+        from poule.extraction.reporting import generate_benchmarks
 
         path = _write_jsonl(tmp_path / "empty.jsonl", [])
         output_dir = tmp_path / "benchmarks"
@@ -860,7 +860,7 @@ class TestErrorMissingDatasetsLibrary:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        from wily_rooster.extraction.reporting import export_to_huggingface
+        from poule.extraction.reporting import export_to_huggingface
 
         records = [_make_extraction_record()]
         input_path = _write_jsonl(tmp_path / "input.jsonl", records)

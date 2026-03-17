@@ -1,16 +1,16 @@
 """TDD tests for proof serialization (specification/proof-serialization.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until src/wily_rooster/serialization/ modules exist.
+until src/poule/serialization/ modules exist.
 
 Spec: specification/proof-serialization.md
 Architecture: doc/architecture/proof-serialization.md
 Data model: doc/architecture/data-models/proof-types.md
 
 Import paths under test:
-  wily_rooster.serialization.serialize
-  wily_rooster.serialization.diff
-  wily_rooster.session.types
+  poule.serialization.serialize
+  poule.serialization.diff
+  poule.session.types
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _import_types():
-    from wily_rooster.session.types import (
+    from poule.session.types import (
         Goal,
         GoalChange,
         Hypothesis,
@@ -46,7 +46,7 @@ def _import_types():
 
 
 def _import_serialize():
-    from wily_rooster.serialization.serialize import (
+    from poule.serialization.serialize import (
         serialize_goal,
         serialize_hypothesis,
         serialize_premise,
@@ -69,7 +69,7 @@ def _import_serialize():
 
 
 def _import_diff():
-    from wily_rooster.serialization.diff import compute_diff
+    from poule.serialization.diff import compute_diff
     return compute_diff
 
 

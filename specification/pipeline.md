@@ -186,4 +186,4 @@ Then:
 - `PipelineContext` as a dataclass or plain class.
 - `CoqParser` as a `Protocol` (structural subtyping) or ABC.
 - Use `subprocess` or a library to manage coq-lsp process lifecycle.
-- Package location: `src/wily_rooster/pipeline/`.
+- Package location: `src/poule/pipeline/`.

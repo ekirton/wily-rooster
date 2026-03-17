@@ -9,7 +9,7 @@ Tests target the public API defined in specification/pipeline.md:
   - search_by_name(ctx, pattern, limit) -> list[SearchResult]
   - score_candidates(query_tree, candidates_with_wl, ctx)
 
-Implementation will live in src/wily_rooster/pipeline/.
+Implementation will live in src/poule/pipeline/.
 """
 
 from __future__ import annotations
@@ -19,15 +19,15 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from wily_rooster.pipeline.context import PipelineContext, create_context
-from wily_rooster.pipeline.search import (
+from poule.pipeline.context import PipelineContext, create_context
+from poule.pipeline.search import (
     score_candidates,
     search_by_name,
     search_by_structure,
     search_by_symbols,
     search_by_type,
 )
-from wily_rooster.pipeline.parser import CoqParser, ParseError
+from poule.pipeline.parser import CoqParser, ParseError
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ def _mock_context(parser=None):
 class TestCreateContext:
     """create_context(db_path) opens the reader and loads all in-memory structures."""
 
-    @patch("wily_rooster.pipeline.context.IndexReader")
+    @patch("poule.pipeline.context.IndexReader")
     def test_loads_all_data_from_reader(self, MockIndexReader):
         reader = _mock_reader()
         MockIndexReader.return_value = reader
@@ -119,7 +119,7 @@ class TestCreateContext:
         assert ctx.inverted_index == reader.load_inverted_index()
         assert ctx.symbol_frequencies == reader.load_symbol_frequencies()
 
-    @patch("wily_rooster.pipeline.context.IndexReader")
+    @patch("poule.pipeline.context.IndexReader")
     def test_declaration_symbols_derived_from_inverted_index(self, MockIndexReader):
         reader = _mock_reader()
         MockIndexReader.return_value = reader
@@ -132,7 +132,7 @@ class TestCreateContext:
         assert "Coq.Init.Nat.add" in ctx.declaration_symbols[1]
         assert "Coq.Init.Datatypes.nat" in ctx.declaration_symbols[1]
 
-    @patch("wily_rooster.pipeline.context.IndexReader")
+    @patch("poule.pipeline.context.IndexReader")
     def test_declaration_node_counts_loaded(self, MockIndexReader):
         reader = _mock_reader()
         MockIndexReader.return_value = reader
@@ -150,7 +150,7 @@ class TestCreateContext:
 class TestPipelineContextParserLazy:
     """The parser field is None until the first structural or type query."""
 
-    @patch("wily_rooster.pipeline.context.IndexReader")
+    @patch("poule.pipeline.context.IndexReader")
     def test_parser_is_none_after_creation(self, MockIndexReader):
         MockIndexReader.return_value = _mock_reader()
 
@@ -167,8 +167,8 @@ class TestPipelineContextParserLazy:
 class TestSearchByName:
     """search_by_name delegates to fts_query and fts_search."""
 
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
     def test_calls_fts_query_then_fts_search(self, mock_fts_query, mock_fts_search):
         ctx = _mock_context()
         mock_fts_query.return_value = "Nat AND add AND comm"
@@ -185,8 +185,8 @@ class TestSearchByName:
         )
         assert len(results) == 2
 
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
     def test_returns_search_result_list(self, mock_fts_query, mock_fts_search):
         ctx = _mock_context()
         mock_fts_query.return_value = "commutativity"
@@ -197,8 +197,8 @@ class TestSearchByName:
 
         assert results == expected
 
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
     def test_empty_fts_query_returns_empty(self, mock_fts_query, mock_fts_search):
         ctx = _mock_context()
         mock_fts_query.return_value = ""
@@ -217,7 +217,7 @@ class TestSearchByName:
 class TestSearchBySymbols:
     """search_by_symbols delegates to mepo_select and respects limit."""
 
-    @patch("wily_rooster.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.mepo_select")
     def test_calls_mepo_select_with_correct_args(self, mock_mepo):
         ctx = _mock_context()
         mock_mepo.return_value = [
@@ -236,7 +236,7 @@ class TestSearchBySymbols:
         ) == set(symbols)
         assert len(results) == 2
 
-    @patch("wily_rooster.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.mepo_select")
     def test_limits_results(self, mock_mepo):
         ctx = _mock_context()
         mock_mepo.return_value = [
@@ -256,11 +256,11 @@ class TestSearchBySymbols:
 class TestSearchByStructure:
     """search_by_structure orchestrates parse -> normalize -> CSE -> WL -> scoring."""
 
-    @patch("wily_rooster.pipeline.search.score_candidates")
-    @patch("wily_rooster.pipeline.search.wl_screen")
-    @patch("wily_rooster.pipeline.search.wl_histogram")
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_full_flow(
         self,
         mock_coq_norm,
@@ -321,13 +321,13 @@ class TestSearchByStructureParseError:
 class TestSearchByStructureNormalizationError:
     """NormalizationError is caught and produces empty results with a warning."""
 
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_normalization_error_returns_empty(self, mock_coq_norm, caplog):
         parser = _mock_parser()
         ctx = _mock_context(parser=parser)
 
         # Import the error that normalization would raise
-        from wily_rooster.pipeline.search import NormalizationError
+        from poule.pipeline.search import NormalizationError
 
         mock_coq_norm.side_effect = NormalizationError("normalization failed")
 
@@ -336,15 +336,15 @@ class TestSearchByStructureNormalizationError:
 
         assert results == []
 
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_cse_normalization_error_returns_empty(
         self, mock_coq_norm, mock_cse_norm, caplog
     ):
         parser = _mock_parser()
         ctx = _mock_context(parser=parser)
 
-        from wily_rooster.pipeline.search import NormalizationError
+        from poule.pipeline.search import NormalizationError
 
         mock_coq_norm.return_value = MagicMock()
         mock_cse_norm.side_effect = NormalizationError("CSE failed")
@@ -363,16 +363,16 @@ class TestSearchByStructureNormalizationError:
 class TestSearchByType:
     """search_by_type runs structural + MePo + FTS channels and fuses via RRF."""
 
-    @patch("wily_rooster.pipeline.search.rrf_fuse")
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
-    @patch("wily_rooster.pipeline.search.mepo_select")
-    @patch("wily_rooster.pipeline.search.extract_consts")
-    @patch("wily_rooster.pipeline.search.score_candidates")
-    @patch("wily_rooster.pipeline.search.wl_screen")
-    @patch("wily_rooster.pipeline.search.wl_histogram")
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.rrf_fuse")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_three_channels_fused(
         self,
         mock_coq_norm,
@@ -448,10 +448,10 @@ class TestSearchByTypeParseError:
 class TestScoreCandidates:
     """score_candidates computes per-candidate metrics and weighted sums."""
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_computes_all_metrics(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -479,10 +479,10 @@ class TestScoreCandidates:
         mock_collapse.assert_called_once()
         mock_ted.assert_called_once()
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_returns_decl_id_score_pairs(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -518,10 +518,10 @@ class TestScoreCandidatesLargeTreesNoTED:
     """When query or candidate has >50 nodes, TED is skipped.
     Uses weights: 0.25 * wl + 0.50 * collapse + 0.25 * jaccard."""
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_large_query_skips_ted(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -547,10 +547,10 @@ class TestScoreCandidatesLargeTreesNoTED:
         # Expected: 0.25 * 0.6 + 0.50 * 0.8 + 0.25 * 0.4 = 0.15 + 0.40 + 0.10 = 0.65
         assert structural_score == pytest.approx(0.65, abs=1e-6)
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_large_candidate_skips_ted(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -586,10 +586,10 @@ class TestScoreCandidatesSmallTreesWithTED:
     """When both query and candidate have <=50 nodes, TED is included.
     Uses weights: 0.15 * wl + 0.40 * ted + 0.30 * collapse + 0.15 * jaccard."""
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_small_trees_include_ted(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -617,10 +617,10 @@ class TestScoreCandidatesSmallTreesWithTED:
         #         = 0.135 + 0.28 + 0.24 + 0.09 = 0.745
         assert structural_score == pytest.approx(0.745, abs=1e-6)
 
-    @patch("wily_rooster.pipeline.search.ted_similarity")
-    @patch("wily_rooster.pipeline.search.collapse_match")
-    @patch("wily_rooster.pipeline.search.jaccard_similarity")
-    @patch("wily_rooster.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.ted_similarity")
+    @patch("poule.pipeline.search.collapse_match")
+    @patch("poule.pipeline.search.jaccard_similarity")
+    @patch("poule.pipeline.search.extract_consts")
     def test_boundary_50_nodes_includes_ted(
         self, mock_extract, mock_jaccard, mock_collapse, mock_ted
     ):
@@ -656,8 +656,8 @@ class TestScoreCandidatesSmallTreesWithTED:
 class TestResultsLimited:
     """All search functions respect the limit parameter."""
 
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
     def test_search_by_name_respects_limit(self, mock_fts_query, mock_fts_search):
         ctx = _mock_context()
         mock_fts_query.return_value = "test"
@@ -669,7 +669,7 @@ class TestResultsLimited:
 
         assert len(results) <= 5
 
-    @patch("wily_rooster.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.mepo_select")
     def test_search_by_symbols_respects_limit(self, mock_mepo):
         ctx = _mock_context()
         mock_mepo.return_value = [
@@ -680,11 +680,11 @@ class TestResultsLimited:
 
         assert len(results) <= 3
 
-    @patch("wily_rooster.pipeline.search.score_candidates")
-    @patch("wily_rooster.pipeline.search.wl_screen")
-    @patch("wily_rooster.pipeline.search.wl_histogram")
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_search_by_structure_respects_limit(
         self, mock_coq, mock_cse, mock_wl_hist, mock_wl_screen, mock_score
     ):
@@ -712,11 +712,11 @@ class TestResultsLimited:
 class TestResultsSortedDescending:
     """All search functions return results sorted by score, highest first."""
 
-    @patch("wily_rooster.pipeline.search.score_candidates")
-    @patch("wily_rooster.pipeline.search.wl_screen")
-    @patch("wily_rooster.pipeline.search.wl_histogram")
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_structure_results_sorted_descending(
         self, mock_coq, mock_cse, mock_wl_hist, mock_wl_screen, mock_score
     ):
@@ -737,7 +737,7 @@ class TestResultsSortedDescending:
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
 
-    @patch("wily_rooster.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.mepo_select")
     def test_symbols_results_sorted_descending(self, mock_mepo):
         ctx = _mock_context()
         # Return in non-sorted order
@@ -752,16 +752,16 @@ class TestResultsSortedDescending:
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
 
-    @patch("wily_rooster.pipeline.search.rrf_fuse")
-    @patch("wily_rooster.pipeline.search.fts_search")
-    @patch("wily_rooster.pipeline.search.fts_query")
-    @patch("wily_rooster.pipeline.search.mepo_select")
-    @patch("wily_rooster.pipeline.search.extract_consts")
-    @patch("wily_rooster.pipeline.search.score_candidates")
-    @patch("wily_rooster.pipeline.search.wl_screen")
-    @patch("wily_rooster.pipeline.search.wl_histogram")
-    @patch("wily_rooster.pipeline.search.cse_normalize")
-    @patch("wily_rooster.pipeline.search.coq_normalize")
+    @patch("poule.pipeline.search.rrf_fuse")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
     def test_type_results_sorted_descending(
         self,
         mock_coq,

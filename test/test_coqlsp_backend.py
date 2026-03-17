@@ -158,7 +158,7 @@ class TestWriteMessage:
     """_write_message encodes JSON-RPC messages with Content-Length header."""
 
     def test_produces_content_length_header_and_json_body(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         output = io.BytesIO()
@@ -178,7 +178,7 @@ class TestWriteMessage:
         assert json.loads(body) == msg
 
     def test_body_is_utf8_encoded(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         output = io.BytesIO()
@@ -203,7 +203,7 @@ class TestReadMessage:
     """_read_message decodes Content-Length framed JSON-RPC messages."""
 
     def test_parses_single_message(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msg = {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}
         raw = _encode_lsp(msg)
@@ -217,7 +217,7 @@ class TestReadMessage:
 
     def test_handles_multiple_headers(self):
         """Reader handles Content-Type and other headers per LSP spec."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msg = {"jsonrpc": "2.0", "id": 2, "result": {}}
         body = json.dumps(msg).encode("utf-8")
@@ -235,7 +235,7 @@ class TestReadMessage:
         assert result == msg
 
     def test_reads_two_consecutive_messages(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msg1 = {"jsonrpc": "2.0", "id": 1, "result": {"a": 1}}
         msg2 = {"jsonrpc": "2.0", "id": 2, "result": {"b": 2}}
@@ -249,8 +249,8 @@ class TestReadMessage:
         assert backend._read_message() == msg2
 
     def test_eof_raises_backend_crash_error(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
-        from wily_rooster.extraction.errors import BackendCrashError
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.errors import BackendCrashError
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -269,7 +269,7 @@ class TestInitialization:
     """start() performs the LSP initialize/initialized handshake."""
 
     def test_start_sends_initialize_then_initialized(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -300,7 +300,7 @@ class TestInitialization:
         backend.stop()
 
     def test_start_passes_process_id(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -325,7 +325,7 @@ class TestInitialization:
         backend.stop()
 
     def test_start_spawns_coq_lsp_subprocess(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -361,7 +361,7 @@ class TestDetectVersion:
 
     def test_returns_version_from_server_info(self):
         """Version is extracted from the initialize response serverInfo."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -388,7 +388,7 @@ class TestDetectVersion:
 
     def test_fallback_to_coqc_version(self):
         """When serverInfo has no Coq version, falls back to coqc --version."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -427,7 +427,7 @@ class TestDocumentLifecycle:
     """Backend opens/closes synthetic .v documents for Vernac queries."""
 
     def test_open_document_sends_did_open_notification(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         server = FakeLspServer(messages=[])
@@ -450,7 +450,7 @@ class TestDocumentLifecycle:
         assert doc["text"] == text
 
     def test_close_document_sends_did_close_notification(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         server = FakeLspServer(messages=[])
@@ -478,7 +478,7 @@ class TestWaitForDiagnostics:
     """_wait_for_diagnostics collects publishDiagnostics for a URI."""
 
     def test_collects_diagnostics_matching_uri(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         uri = "file:///tmp/wily_query_1.v"
         diag = _make_diagnostic("nat : Set", severity=3, start_line=1)
@@ -496,7 +496,7 @@ class TestWaitForDiagnostics:
 
     def test_ignores_diagnostics_for_other_uris(self):
         """Diagnostics for other documents are buffered, not returned."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         target_uri = "file:///tmp/wily_query_1.v"
         other_uri = "file:///tmp/other.v"
@@ -521,7 +521,7 @@ class TestWaitForDiagnostics:
 
     def test_buffers_interleaved_notifications(self):
         """Server responses (to other requests) are buffered while waiting."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         target_uri = "file:///tmp/wily_query_1.v"
         # An unrelated response arrives before our diagnostics
@@ -553,7 +553,7 @@ class TestWaitForDiagnostics:
         would cause the backend to hang waiting for a non-empty notification
         that never arrives.
         """
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         uri = "file:///tmp/wily_query_0.v"
         # coq-lsp sends exactly one empty publishDiagnostics for the URI
@@ -587,7 +587,7 @@ class TestSentenceMessages:
 
     def test_proof_goals_returns_messages_for_check(self):
         """proof/goals at a Check command returns the type signature."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -617,7 +617,7 @@ class TestSentenceMessages:
 
     def test_proof_goals_returns_multiple_messages_for_search(self):
         """proof/goals at a Search command returns one message per result."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -645,7 +645,7 @@ class TestSentenceMessages:
 
     def test_proof_goals_empty_messages_for_require(self):
         """proof/goals at a Require Import returns no messages (no output)."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -682,7 +682,7 @@ class TestListDeclarations:
 
     def test_returns_name_kind_constr_tuples_via_proof_goals(self):
         """Search results come from proof/goals messages, not diagnostics."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -743,7 +743,7 @@ class TestListDeclarations:
 
     def test_opens_document_with_require_and_search(self):
         """The synthetic doc must Require the module then Search inside it."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -781,7 +781,7 @@ class TestListDeclarations:
 
     def test_empty_module_returns_empty_list(self):
         """When proof/goals returns no messages, no declarations are found."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -813,7 +813,7 @@ class TestListDeclarations:
         Error diagnostics (severity 1) indicate the Require failed.
         The backend must not proceed to proof/goals in this case.
         """
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -855,7 +855,7 @@ class TestListDeclarations:
             line 0: Require Import <module>.
             line 1: Search _ inside <module>.
         """
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -904,7 +904,7 @@ class TestParseSearchDiagnostics:
 
     def test_parses_name_colon_type_lines(self):
         """Search output lines are 'name : type_sig'."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         diags = [
             _make_diagnostic("Nat.add : nat -> nat -> nat"),
@@ -919,7 +919,7 @@ class TestParseSearchDiagnostics:
 
     def test_skips_error_diagnostics(self):
         """Error diagnostics (severity 1) are not search results."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         diags = [
             _make_diagnostic("Nat.add : nat -> nat -> nat", severity=3),
@@ -930,7 +930,7 @@ class TestParseSearchDiagnostics:
         assert len(result) == 1
 
     def test_empty_diagnostics_returns_empty(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         result = CoqLspBackend._parse_search_diagnostics([])
         assert result == []
@@ -952,7 +952,7 @@ class TestDeclarationKindDetection:
     """
 
     def _make_backend(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1130,7 +1130,7 @@ class TestPrettyPrint:
 
     def test_returns_print_output_from_proof_goals(self):
         """Print output comes from proof/goals messages, not diagnostics."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1166,7 +1166,7 @@ class TestPrettyPrint:
         assert isinstance(result, str)
 
     def test_opens_document_with_print_command(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1206,7 +1206,7 @@ class TestPrettyPrintType:
 
     def test_returns_type_from_proof_goals(self):
         """Check output comes from proof/goals messages."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1239,7 +1239,7 @@ class TestPrettyPrintType:
 
     def test_returns_none_on_error(self):
         """Error diagnostics (Require/Check failure) → return None."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1265,7 +1265,7 @@ class TestPrettyPrintType:
         assert result is None
 
     def test_opens_document_with_check_command(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1305,7 +1305,7 @@ class TestGetDependencies:
 
     def test_parses_print_assumptions_from_proof_goals(self):
         """Print Assumptions output comes from proof/goals messages."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1344,7 +1344,7 @@ class TestGetDependencies:
 
     def test_closed_under_global_context_returns_empty(self):
         """Declarations with no axioms return empty dependency list."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1377,7 +1377,7 @@ class TestGetDependencies:
         assert result == []
 
     def test_opens_document_with_print_assumptions(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1416,14 +1416,14 @@ class TestVoToLogicalPath:
     """_vo_to_logical_path derives Coq module path from .vo file path."""
 
     def test_stdlib_path(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path("/home/user/.opam/default/lib/coq/theories/Init/Nat.vo")
         result = CoqLspBackend._vo_to_logical_path(path)
         assert result == "Init.Nat"
 
     def test_mathcomp_path(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path(
             "/home/user/.opam/default/lib/coq/user-contrib/mathcomp/ssreflect/ssrnat.vo"
@@ -1432,7 +1432,7 @@ class TestVoToLogicalPath:
         assert result == "mathcomp.ssreflect.ssrnat"
 
     def test_nested_stdlib_path(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path(
             "/coq/theories/Arith/PeanoNat.vo"
@@ -1448,7 +1448,7 @@ class TestVoToLogicalPath:
         'Search _ inside Stdlib.Init.Nat.' in Rocq 9.x — the correct
         logical path for Search is 'Init.Nat' (without the Stdlib prefix).
         """
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         path = Path(
             "/home/user/.opam/default/lib/coq/user-contrib/Stdlib/Init/Nat.vo"
@@ -1469,8 +1469,8 @@ class TestBackendErrors:
     """Error handling for coq-lsp subprocess failures."""
 
     def test_start_raises_extraction_error_when_coq_lsp_not_found(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
-        from wily_rooster.extraction.errors import ExtractionError
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.errors import ExtractionError
 
         with patch("subprocess.Popen", side_effect=FileNotFoundError("coq-lsp not found")):
             backend = CoqLspBackend()
@@ -1478,8 +1478,8 @@ class TestBackendErrors:
                 backend.start()
 
     def test_process_exit_raises_backend_crash_error(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
-        from wily_rooster.extraction.errors import BackendCrashError
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.errors import BackendCrashError
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1492,8 +1492,8 @@ class TestBackendErrors:
 
     def test_json_rpc_error_response_raises_extraction_error(self):
         """A JSON-RPC error response is converted to ExtractionError."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
-        from wily_rooster.extraction.errors import ExtractionError
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.errors import ExtractionError
 
         error_response = {
             "jsonrpc": "2.0",
@@ -1520,7 +1520,7 @@ class TestLifecycle:
     """start/stop lifecycle and context manager support."""
 
     def test_stop_sends_shutdown_then_exit(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         # Prepare server: respond to shutdown request
@@ -1547,7 +1547,7 @@ class TestLifecycle:
         assert methods.index("shutdown") < methods.index("exit")
 
     def test_context_manager_calls_start_and_stop(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -1575,7 +1575,7 @@ class TestLifecycle:
         assert "shutdown" in methods
 
     def test_stop_on_already_stopped_is_noop(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = None
@@ -1584,7 +1584,7 @@ class TestLifecycle:
         backend.stop()
 
     def test_double_start_is_idempotent(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         init_response = _make_response(1, {
             "capabilities": {},
@@ -1618,8 +1618,8 @@ class TestProtocolConformance:
     """CoqLspBackend satisfies the CoqBackend protocol."""
 
     def test_implements_coq_backend_protocol(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
-        from wily_rooster.extraction.coq_backend import CoqBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.coq_backend import CoqBackend
 
         assert issubclass(CoqLspBackend, CoqBackend) or (
             hasattr(CoqLspBackend, "list_declarations")
@@ -1647,7 +1647,7 @@ class TestContractListDeclarations:
     def test_real_backend_list_declarations(self):
         import subprocess
 
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         # Find a stdlib .vo file known to contain declarations.
         # Rocq 9.x moved stdlib from theories/ to user-contrib/Stdlib/.
@@ -1692,7 +1692,7 @@ class TestContractDetectVersion:
     """Contract: real coq-lsp returns a version string."""
 
     def test_real_backend_detect_version(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         with CoqLspBackend() as backend:
             version = backend.detect_version()
@@ -1710,7 +1710,7 @@ class TestContractPrettyPrint:
     """
 
     def test_real_backend_pretty_print(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         # Use the short name 'Nat.add' which works in both Coq 8.x and Rocq 9.x.
         # 'Coq.Init.Nat.add' produces only a deprecation warning in Rocq 9.x,
@@ -1739,7 +1739,7 @@ class TestContractGetDependencies:
     """Contract: real coq-lsp returns dependencies for a known declaration."""
 
     def test_real_backend_get_dependencies(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         # Use short name for Rocq 9.x compatibility
         with CoqLspBackend() as backend:
@@ -1760,7 +1760,7 @@ class TestRunVernacBatch:
     """_run_vernac_batch executes multiple commands in a single document."""
 
     def _make_backend(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1873,7 +1873,7 @@ class TestBatchedListDeclarations:
     """list_declarations batches About queries to reduce document lifecycle overhead."""
 
     def _make_backend(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -1971,7 +1971,7 @@ class TestQueryDeclarationData:
     """query_declaration_data batches Print + Print Assumptions queries."""
 
     def _make_backend(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         backend = CoqLspBackend.__new__(CoqLspBackend)
         backend._proc = Mock()
@@ -2049,44 +2049,44 @@ class TestParseAboutKind:
     """_parse_about_kind extracts kind from About messages."""
 
     def test_rocq9_constant(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("Expands to: Constant Corelib.Init.Nat.add")]
         assert CoqLspBackend._parse_about_kind("Nat.add", msgs) == "definition"
 
     def test_rocq9_inductive(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("Expands to: Inductive Corelib.Init.Datatypes.nat")]
         assert CoqLspBackend._parse_about_kind("nat", msgs) == "inductive"
 
     def test_coq8_lemma(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("foo is a lemma")]
         assert CoqLspBackend._parse_about_kind("foo", msgs) == "lemma"
 
     def test_not_defined_falls_back(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("X not a defined object.")]
         assert CoqLspBackend._parse_about_kind("X", msgs) == "definition"
 
     def test_empty_messages_falls_back(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         assert CoqLspBackend._parse_about_kind("X", []) == "definition"
 
     def test_rocq9_ltac_detected(self):
         """Rocq 9.x: 'Ltac <path>' → ltac."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("Ltac Corelib.Init.Ltac.reflexivity")]
         assert CoqLspBackend._parse_about_kind("reflexivity", msgs) == "ltac"
 
     def test_rocq9_module_detected(self):
         """Rocq 9.x: 'Module <path>' → module."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         msgs = [_make_sentence_message("Module Corelib.Init.Decimal")]
         assert CoqLspBackend._parse_about_kind("Decimal", msgs) == "module"
@@ -2097,7 +2097,7 @@ class TestParseAboutKind:
         When About output contains both 'Expands to: Notation ...' and
         'Expands to: Constant ...', the Constant category takes precedence.
         """
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         about_text = (
             "Notation pred := Nat.pred\n"
@@ -2117,7 +2117,7 @@ class TestParseAboutKind:
 
     def test_rocq9_pure_notation_detected(self):
         """Rocq 9.x: notation with only 'Expands to: Notation' → notation."""
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         about_text = (
             "Notation some_notation := ...\n"
@@ -2133,7 +2133,7 @@ class TestContractQueryDeclarationData:
     """Contract: real coq-lsp returns statement and dependencies for declarations."""
 
     def test_real_backend_query_declaration_data(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         with CoqLspBackend() as backend:
             result = backend.query_declaration_data(["Nat.add", "Nat.mul"])
@@ -2151,7 +2151,7 @@ class TestContractRunVernacBatch:
     """Contract: real coq-lsp returns per-line messages for batched commands."""
 
     def test_real_backend_run_vernac_batch(self):
-        from wily_rooster.extraction.backends.coqlsp_backend import CoqLspBackend
+        from poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
         with CoqLspBackend() as backend:
             results = backend._run_vernac_batch([

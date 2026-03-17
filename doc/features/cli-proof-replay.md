@@ -15,7 +15,7 @@ The proof interaction tools (open session, step forward, extract trace, get prem
 A `replay-proof` CLI subcommand that opens a proof session, walks the entire proof non-interactively, outputs the trace (and optionally premise annotations), then cleans up. One command, one proof, complete output.
 
 ```
-wily-rooster replay-proof <file_path> <proof_name> [--json] [--premises]
+poule replay-proof <file_path> <proof_name> [--json] [--premises]
 ```
 
 ## Design Rationale

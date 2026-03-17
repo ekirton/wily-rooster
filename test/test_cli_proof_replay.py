@@ -8,8 +8,8 @@ Architecture: doc/architecture/cli.md
 Stories: doc/requirements/stories/proof-interaction-protocol.md Epic 8
 
 Import paths under test:
-  wily_rooster.cli.commands (cmd_replay_proof)
-  wily_rooster.cli.formatting (format_proof_trace)
+  poule.cli.commands (cmd_replay_proof)
+  poule.cli.formatting (format_proof_trace)
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from wily_rooster.session.types import (
+from poule.session.types import (
     Goal,
     Hypothesis,
     Premise,
@@ -29,7 +29,7 @@ from wily_rooster.session.types import (
     ProofTrace,
     TraceStep,
 )
-from wily_rooster.session.errors import (
+from poule.session.errors import (
     BACKEND_CRASHED,
     FILE_NOT_FOUND,
     PROOF_NOT_FOUND,
@@ -121,12 +121,12 @@ def _make_premises():
 
 
 def _import_cli():
-    from wily_rooster.cli.commands import cli
+    from poule.cli.commands import cli
     return cli
 
 
 def _import_format_proof_trace():
-    from wily_rooster.cli.formatting import format_proof_trace
+    from poule.cli.formatting import format_proof_trace
     return format_proof_trace
 
 
@@ -242,8 +242,8 @@ class TestReplayProofCommand:
     def test_happy_path_human_readable(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         assert result.exit_code == 0
         assert "Proof: add_comm" in result.output
@@ -252,8 +252,8 @@ class TestReplayProofCommand:
     def test_happy_path_json(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "test.v", "add_comm", "--json"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
@@ -263,8 +263,8 @@ class TestReplayProofCommand:
     def test_with_premises_flag(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "test.v", "add_comm", "--premises"])
         assert result.exit_code == 0
         assert "Premises:" in result.output
@@ -273,8 +273,8 @@ class TestReplayProofCommand:
     def test_json_with_premises(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(
                 cli, ["replay-proof", "test.v", "add_comm", "--json", "--premises"]
             )
@@ -286,8 +286,8 @@ class TestReplayProofCommand:
     def test_session_manager_called_correctly(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         mgr.create_session.assert_called_once_with("test.v", "add_comm")
         mgr.extract_trace.assert_called_once_with("test-session")
@@ -295,16 +295,16 @@ class TestReplayProofCommand:
     def test_session_always_closed(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         mgr.close_session.assert_called_once_with("test-session")
 
     def test_premises_not_fetched_without_flag(self, runner):
         cli = _import_cli()
         mgr = _make_mock_manager()
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         mgr.get_premises.assert_not_called()
 
@@ -322,8 +322,8 @@ class TestReplayProofErrors:
         mgr = _make_mock_manager(
             create_error=SessionError(FILE_NOT_FOUND, "File not found: missing.v")
         )
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "missing.v", "add_comm"])
         assert result.exit_code == 1
         assert "File not found" in result.output
@@ -333,8 +333,8 @@ class TestReplayProofErrors:
         mgr = _make_mock_manager(
             create_error=SessionError(PROOF_NOT_FOUND, "Proof not found: bad_name")
         )
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "test.v", "bad_name"])
         assert result.exit_code == 1
         assert "Proof not found" in result.output
@@ -345,8 +345,8 @@ class TestReplayProofErrors:
         mgr.extract_trace = AsyncMock(
             side_effect=SessionError(BACKEND_CRASHED, "test-session")
         )
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             result = runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         assert result.exit_code == 1
         assert "crashed" in result.output.lower() or "Backend" in result.output
@@ -368,8 +368,8 @@ class TestReplayProofErrors:
         mgr.extract_trace = AsyncMock(
             side_effect=SessionError(BACKEND_CRASHED, "test-session")
         )
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "test.v", "add_comm"])
         mgr.close_session.assert_called_once_with("test-session")
 
@@ -379,8 +379,8 @@ class TestReplayProofErrors:
         mgr = _make_mock_manager(
             create_error=SessionError(FILE_NOT_FOUND, "File not found: missing.v")
         )
-        with patch("wily_rooster.cli.commands._get_backend_factory") as mock_bf, \
-             patch("wily_rooster.cli.commands.SessionManager", return_value=mgr):
+        with patch("poule.cli.commands._get_backend_factory") as mock_bf, \
+             patch("poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "missing.v", "add_comm"])
         mgr.close_session.assert_not_called()
 

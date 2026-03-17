@@ -318,4 +318,4 @@ summary = run_campaign(
 - Use `pathlib.Path` for all file path operations; resolve to absolute paths at campaign start.
 - Use `subprocess.run(["coqc", "--version"])` for Coq version detection.
 - Use `subprocess.run(["git", "rev-parse", "HEAD"])` for commit hash detection; catch `FileNotFoundError` and `subprocess.CalledProcessError` for non-git directories.
-- Package location: `src/wily_rooster/extraction/campaign.py`.
+- Package location: `src/poule/extraction/campaign.py`.

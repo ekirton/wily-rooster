@@ -1,7 +1,7 @@
 """TDD tests for the TED fine-ranking channel.
 
 Tests are written BEFORE implementation exists. They will fail with ImportError
-until the production modules in src/wily_rooster/channels/ted.py are implemented.
+until the production modules in src/poule/channels/ted.py are implemented.
 
 Specification: specification/channel-ted.md
 Architecture:  doc/architecture/retrieval-pipeline.md
@@ -18,24 +18,24 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _make_leaf(label):
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
     return TreeNode(label=label, children=[])
 
 
 def _make_node(label, children):
-    from wily_rooster.models.tree import TreeNode
+    from poule.models.tree import TreeNode
     return TreeNode(label=label, children=children)
 
 
 def _make_tree(root):
-    from wily_rooster.models.tree import ExprTree, node_count as _nc
+    from poule.models.tree import ExprTree, node_count as _nc
     return ExprTree(root=root, node_count=_nc(root))
 
 
 def _prepare_tree(root):
     """Build an ExprTree from a root node, then run recompute_depths and
     assign_node_ids as required by the TED spec."""
-    from wily_rooster.models.tree import recompute_depths, assign_node_ids
+    from poule.models.tree import recompute_depths, assign_node_ids
     tree = _make_tree(root)
     recompute_depths(tree)
     assign_node_ids(tree)
@@ -47,78 +47,78 @@ def _prepare_tree(root):
 # ---------------------------------------------------------------------------
 
 def _labs():
-    from wily_rooster.models.labels import LAbs
+    from poule.models.labels import LAbs
     return LAbs()
 
 
 def _lprod():
-    from wily_rooster.models.labels import LProd
+    from poule.models.labels import LProd
     return LProd()
 
 
 def _llet():
-    from wily_rooster.models.labels import LLet
+    from poule.models.labels import LLet
     return LLet()
 
 
 def _lapp():
-    from wily_rooster.models.labels import LApp
+    from poule.models.labels import LApp
     return LApp()
 
 
 def _lconst(name="Coq.Init.Nat.add"):
-    from wily_rooster.models.labels import LConst
+    from poule.models.labels import LConst
     return LConst(name)
 
 
 def _lind(name="Coq.Init.Datatypes.nat"):
-    from wily_rooster.models.labels import LInd
+    from poule.models.labels import LInd
     return LInd(name)
 
 
 def _lconstruct(name="Coq.Init.Datatypes.nat", idx=0):
-    from wily_rooster.models.labels import LConstruct
+    from poule.models.labels import LConstruct
     return LConstruct(name, idx)
 
 
 def _lrel(n=0):
-    from wily_rooster.models.labels import LRel
+    from poule.models.labels import LRel
     return LRel(n)
 
 
 def _lcsevar(n=0):
-    from wily_rooster.models.labels import LCseVar
+    from poule.models.labels import LCseVar
     return LCseVar(n)
 
 
 def _lsort(kind=None):
-    from wily_rooster.models.labels import LSort
-    from wily_rooster.models.enums import SortKind
+    from poule.models.labels import LSort
+    from poule.models.enums import SortKind
     return LSort(kind or SortKind.PROP)
 
 
 def _lcase(name="Coq.Init.Datatypes.nat"):
-    from wily_rooster.models.labels import LCase
+    from poule.models.labels import LCase
     return LCase(name)
 
 
 def _lfix(idx=0):
-    from wily_rooster.models.labels import LFix
+    from poule.models.labels import LFix
     return LFix(idx)
 
 
 def _lcofix(idx=0):
-    from wily_rooster.models.labels import LCoFix
+    from poule.models.labels import LCoFix
     return LCoFix(idx)
 
 
 def _lproj(name="proj"):
-    from wily_rooster.models.labels import LProj
+    from poule.models.labels import LProj
     return LProj(name)
 
 
 def _lprimitive(val=42):
-    from wily_rooster.models.labels import LPrimitive
+    from poule.models.labels import LPrimitive
     return LPrimitive(val)
 
 
@@ -131,72 +131,72 @@ class TestRenameCost:
 
     def test_identical_labels_return_zero(self):
         """Identical labels → 0.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lconst("a"), _lconst("a")) == 0.0
 
     def test_identical_labels_interior(self):
         """Identical interior labels → 0.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lapp(), _lapp()) == 0.0
 
     def test_same_category_binder_labs_lprod(self):
         """LAbs vs LProd (both Binder) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_labs(), _lprod()) == 0.5
 
     def test_same_category_binder_labs_llet(self):
         """LAbs vs LLet (both Binder) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_labs(), _llet()) == 0.5
 
     def test_cross_category_labs_lapp(self):
         """LAbs (Binder) vs LApp (Application) → 1.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_labs(), _lapp()) == 1.0
 
     def test_same_category_constant_ref(self):
         """LConst vs LInd (both ConstantRef) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lconst("a"), _lind("b")) == 0.5
 
     def test_same_category_constant_ref_construct(self):
         """LConst vs LConstruct (both ConstantRef) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lconst("a"), _lconstruct("b", 0)) == 0.5
 
     def test_same_category_variable(self):
         """LRel vs LCseVar (both Variable) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lrel(0), _lcsevar(0)) == 0.5
 
     def test_cross_category_sort_vs_primitive(self):
         """LSort (Sort) vs LPrimitive (Primitive) → 1.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lsort(), _lprimitive()) == 1.0
 
     def test_same_category_control(self):
         """LCase vs LFix (both Control) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lcase(), _lfix()) == 0.5
 
     def test_same_category_control_fix_cofix(self):
         """LFix vs LCoFix (both Control) → 0.5."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lfix(), _lcofix()) == 0.5
 
     def test_cross_category_const_vs_rel(self):
         """LConst (ConstantRef) vs LRel (Variable) → 1.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lconst("a"), _lrel(0)) == 1.0
 
     def test_cross_category_app_vs_case(self):
         """LApp (Application) vs LCase (Control) → 1.0."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         assert rename_cost(_lapp(), _lcase()) == 1.0
 
     def test_rename_cost_symmetry(self):
         """rename_cost(a, b) == rename_cost(b, a) for all tested pairs."""
-        from wily_rooster.channels.ted import rename_cost
+        from poule.channels.ted import rename_cost
         pairs = [
             (_labs(), _lprod()),
             (_lconst("a"), _lind("b")),
@@ -219,14 +219,14 @@ class TestTed:
 
     def test_identical_single_node_trees(self):
         """Identical single-node trees → 0.0."""
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
         tree_a = _prepare_tree(_make_leaf(_lconst("a")))
         tree_b = _prepare_tree(_make_leaf(_lconst("a")))
         assert ted(tree_a, tree_b) == 0.0
 
     def test_identical_multi_node_trees(self):
         """Identical multi-node trees → 0.0."""
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         def build():
             return _prepare_tree(
@@ -244,8 +244,8 @@ class TestTed:
         An 'empty tree' is modelled as None / zero-node, resulting in cost
         equal to one insert = 1.0.
         """
-        from wily_rooster.channels.ted import ted
-        from wily_rooster.models.tree import ExprTree
+        from poule.channels.ted import ted
+        from poule.models.tree import ExprTree
 
         tree_a = _prepare_tree(_make_leaf(_lconst("a")))
         # Empty tree represented per data model (root=None or node_count=0).
@@ -259,7 +259,7 @@ class TestTed:
 
         Spec § 7 example: LAbs root vs LProd root, identical children.
         """
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         tree_a = _prepare_tree(
             _make_node(_labs(), [_make_leaf(_lrel(0))])
@@ -274,7 +274,7 @@ class TestTed:
 
         LProd (Binder) root vs LApp (Application) root, same children.
         """
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         tree_a = _prepare_tree(
             _make_node(_lprod(), [
@@ -306,7 +306,7 @@ class TestTed:
         Optimal: rename root LConst→LRel = 1.0, delete two children = 2 * 1.0 = 2.0
         Total = 3.0
         """
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         tree_a = _prepare_tree(
             _make_node(_lcase(), [
@@ -320,7 +320,7 @@ class TestTed:
 
     def test_symmetry(self):
         """ted(a, b) == ted(b, a) for asymmetric trees."""
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         tree_a = _prepare_tree(
             _make_node(_lprod(), [
@@ -341,7 +341,7 @@ class TestTed:
 
         tree_a: LAbs(child), tree_b: LProd(child) → ted = 0.5.
         """
-        from wily_rooster.channels.ted import ted
+        from poule.channels.ted import ted
 
         child = _make_leaf(_lrel(0))
         tree_a = _prepare_tree(_make_node(_labs(), [_make_leaf(_lrel(0))]))
@@ -358,7 +358,7 @@ class TestTedSimilarity:
 
     def test_identical_trees_return_one(self):
         """Identical trees → 1.0."""
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         tree = _prepare_tree(
             _make_node(_lprod(), [
@@ -384,7 +384,7 @@ class TestTedSimilarity:
         each costing 1.0 cross-category).
         similarity = max(0.0, 1.0 - 5.0 / 5) = 0.0.
         """
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         # tree_a: 5 ConstantRef nodes
         tree_a = _prepare_tree(
@@ -417,7 +417,7 @@ class TestTedSimilarity:
         When ted > max(node_count_a, node_count_b) the raw formula would be
         negative. The result must be 0.0.
         """
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         # A large tree vs a small completely different tree.
         # ted could exceed max(nc_a, nc_b) if cross-category costs pile up.
@@ -444,7 +444,7 @@ class TestTedSimilarity:
         ted = 1.0, max_nc = 3.
         similarity = 1.0 - 1.0/3 ≈ 0.6667.
         """
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         tree_a = _prepare_tree(
             _make_node(_lprod(), [
@@ -463,7 +463,7 @@ class TestTedSimilarity:
 
     def test_self_similarity(self):
         """Self-similarity: ted_similarity(T, T) == 1.0 for varied shapes."""
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         trees = [
             _prepare_tree(_make_leaf(_lconst("a"))),
@@ -485,7 +485,7 @@ class TestTedSimilarity:
 
     def test_similarity_in_unit_range(self):
         """Result is always in [0.0, 1.0]."""
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         tree_a = _prepare_tree(
             _make_node(_lapp(), [
@@ -504,7 +504,7 @@ class TestTedSimilarity:
 
     def test_symmetry(self):
         """ted_similarity(a, b) == ted_similarity(b, a)."""
-        from wily_rooster.channels.ted import ted_similarity
+        from poule.channels.ted import ted_similarity
 
         tree_a = _prepare_tree(
             _make_node(_lprod(), [

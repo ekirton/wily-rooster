@@ -1,7 +1,7 @@
 """TDD tests for extraction dependency graph (specification/extraction-dependency-graph.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
-until the production modules exist under src/wily_rooster/extraction/.
+until the production modules exist under src/poule/extraction/.
 
 Covers: dependency derivation, hypothesis exclusion, dependency classification,
 deduplication and ordering, DependencyEntry serialization, integration modes,
@@ -113,28 +113,28 @@ class TestExtractDependenciesBasic:
     """extract_dependencies returns a DependencyEntry from an ExtractionRecord."""
 
     def test_returns_dependency_entry_with_theorem_name(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _make_extraction_record(theorem_name="Coq.Init.Logic.eq_refl")
         entry = extract_dependencies(record)
         assert entry.theorem_name == "Coq.Init.Logic.eq_refl"
 
     def test_returns_dependency_entry_with_source_file(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _make_extraction_record(source_file="theories/Init/Logic.v")
         entry = extract_dependencies(record)
         assert entry.source_file == "theories/Init/Logic.v"
 
     def test_returns_dependency_entry_with_project_id(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _make_extraction_record(project_id="coq-stdlib")
         entry = extract_dependencies(record)
         assert entry.project_id == "coq-stdlib"
 
     def test_depends_on_is_union_of_all_premises_across_steps(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -153,7 +153,7 @@ class TestExtractDependenciesBasic:
 
     def test_spec_example_excludes_hypothesis_and_deduplicates(self):
         """Spec §4.1 example: [A(lemma), H(hyp), B(def), A(lemma)] → [A(lemma), B(definition)]."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _spec_example_record()
         entry = extract_dependencies(record)
@@ -168,7 +168,7 @@ class TestExtractDependenciesAllHypotheses:
     """When all premises are hypotheses, depends_on is empty (§4.1)."""
 
     def test_all_hypotheses_yields_empty_depends_on(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -193,7 +193,7 @@ class TestHypothesisExclusion:
     """Premises with kind='hypothesis' are excluded from depends_on."""
 
     def test_hypothesis_premises_excluded(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -210,7 +210,7 @@ class TestHypothesisExclusion:
 
     @pytest.mark.parametrize("allowed_kind", ["lemma", "definition", "constructor"])
     def test_allowed_kinds_appear_in_depends_on(self, allowed_kind):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -233,7 +233,7 @@ class TestDependencyClassification:
     """DependencyRef kind reflects the entity type in the Coq environment."""
 
     def test_premise_lemma_maps_to_lemma_by_default(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -246,7 +246,7 @@ class TestDependencyClassification:
         assert entry.depends_on[0].kind == "lemma"
 
     def test_premise_definition_maps_to_definition(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -259,7 +259,7 @@ class TestDependencyClassification:
         assert entry.depends_on[0].kind == "definition"
 
     def test_premise_constructor_maps_to_constructor(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -273,7 +273,7 @@ class TestDependencyClassification:
 
     def test_dependency_ref_kind_in_valid_set(self):
         """Every DependencyRef kind must be from the valid set (§4.3)."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -299,7 +299,7 @@ class TestDeduplicationAndOrdering:
     """Deduplicate by FQN, keep first occurrence, first-appearance order."""
 
     def test_duplicate_premises_deduplicated_by_fqn(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -317,7 +317,7 @@ class TestDeduplicationAndOrdering:
 
     def test_first_appearance_order_across_steps(self):
         """§4.4 example: A at step 1 and 3, B at step 2 → order [A, B]."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -336,7 +336,7 @@ class TestDeduplicationAndOrdering:
         assert [ref.name for ref in entry.depends_on] == ["Coq.A", "Coq.B"]
 
     def test_within_step_ordering_preserved(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -352,7 +352,7 @@ class TestDeduplicationAndOrdering:
 
     def test_ordering_is_deterministic(self):
         """Identical inputs produce identical ordering (§4.4)."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -380,8 +380,8 @@ class TestDependencyEntrySerialization:
     """DependencyEntry serializes as JSON with fields in specified order."""
 
     def test_json_field_order(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
-        from wily_rooster.extraction.types import DependencyEntry
+        from poule.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.types import DependencyEntry
 
         record = _spec_example_record()
         entry = extract_dependencies(record)
@@ -391,7 +391,7 @@ class TestDependencyEntrySerialization:
         assert keys == ["theorem_name", "source_file", "project_id", "depends_on"]
 
     def test_dependency_ref_field_order(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _spec_example_record()
         entry = extract_dependencies(record)
@@ -403,7 +403,7 @@ class TestDependencyEntrySerialization:
 
     def test_spec_example_serialization(self):
         """The spec §7 example output for add_comm."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -434,7 +434,7 @@ class TestDependencyEntrySerialization:
 
     def test_empty_depends_on_serialization(self):
         """Theorem with no external dependencies (§7 second example)."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _make_extraction_record(
             theorem_name="Coq.Init.Logic.eq_refl_proof",
@@ -451,7 +451,7 @@ class TestJsonLinesFormat:
     """Output is JSON Lines format: one DependencyEntry per line (§4.5)."""
 
     def test_to_json_produces_single_line(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         record = _spec_example_record()
         entry = extract_dependencies(record)
@@ -468,7 +468,7 @@ class TestPostHocMode:
     """Post-hoc mode reads extraction output, writes dependency graph."""
 
     def test_reads_extraction_output_and_writes_dependency_graph(self):
-        from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+        from poule.extraction.dependency_graph import extract_dependency_graph
 
         record1 = _make_extraction_record(theorem_name="Coq.T1")
         record2 = _make_extraction_record(theorem_name="Coq.T2")
@@ -495,7 +495,7 @@ class TestPostHocMode:
 
     def test_skips_extraction_error_records(self):
         """ExtractionError records are skipped; no dependency entry produced (§4.6)."""
-        from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+        from poule.extraction.dependency_graph import extract_dependency_graph
 
         record = _make_extraction_record(theorem_name="Coq.Good")
         error = _make_extraction_error(theorem_name="Coq.Bad")
@@ -520,7 +520,7 @@ class TestPostHocMode:
 
     def test_skips_errors_count_matches(self):
         """§4.6 example: 100 records + 5 errors → 100 dependency entries."""
-        from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+        from poule.extraction.dependency_graph import extract_dependency_graph
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as inp:
             for i in range(100):
@@ -553,7 +553,7 @@ class TestErrorCases:
 
     def test_no_premises_yields_empty_depends_on(self):
         """ExtractionRecord with no premise annotations → depends_on = []."""
-        from wily_rooster.extraction.dependency_graph import extract_dependencies
+        from poule.extraction.dependency_graph import extract_dependencies
 
         steps = [
             _make_extraction_step(0, None, []),
@@ -566,7 +566,7 @@ class TestErrorCases:
 
     def test_extraction_error_skipped_in_post_hoc(self):
         """ExtractionError record in input → skipped, no DependencyEntry produced."""
-        from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+        from poule.extraction.dependency_graph import extract_dependency_graph
 
         error = _make_extraction_error()
 
@@ -587,7 +587,7 @@ class TestErrorCases:
 
     def test_invalid_json_lines_raises_value_error(self):
         """Invalid JSON Lines input raises ValueError with line number."""
-        from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+        from poule.extraction.dependency_graph import extract_dependency_graph
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as inp:
             record = _make_extraction_record(theorem_name="Coq.Good")
@@ -614,14 +614,14 @@ class TestDependencyTypes:
     """DependencyEntry and DependencyRef types exist in extraction.types."""
 
     def test_dependency_ref_has_name_and_kind(self):
-        from wily_rooster.extraction.types import DependencyRef
+        from poule.extraction.types import DependencyRef
 
         ref = DependencyRef(name="Coq.A", kind="lemma")
         assert ref.name == "Coq.A"
         assert ref.kind == "lemma"
 
     def test_dependency_entry_has_required_fields(self):
-        from wily_rooster.extraction.types import DependencyEntry, DependencyRef
+        from poule.extraction.types import DependencyEntry, DependencyRef
 
         entry = DependencyEntry(
             theorem_name="Coq.T",
@@ -635,7 +635,7 @@ class TestDependencyTypes:
         assert len(entry.depends_on) == 1
 
     def test_dependency_entry_has_to_json_method(self):
-        from wily_rooster.extraction.types import DependencyEntry
+        from poule.extraction.types import DependencyEntry
 
         entry = DependencyEntry(
             theorem_name="Coq.T",

@@ -252,7 +252,7 @@ If future profiling reveals that TED is a bottleneck, consider: (a) a Cython or 
 
 ```
 src/
-  wily_rooster/
+  poule/
     channels/
       __init__.py
       ted.py              # Main module: ted_rerank, ted_similarity

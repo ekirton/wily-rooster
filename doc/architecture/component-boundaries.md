@@ -339,3 +339,15 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | [fill-admits-orchestrator.md](fill-admits-orchestrator.md) | specification/fill-admits-orchestrator.md (pending) |
 | [neural-retrieval.md](neural-retrieval.md) | specification/neural-retrieval.md (pending) |
 | [neural-training.md](neural-training.md) | specification/neural-training.md (pending) |
+| [hammer-automation.md](hammer-automation.md) | [specification/hammer-automation.md](../../specification/hammer-automation.md) |
+| [vernacular-introspection.md](vernacular-introspection.md) | [specification/vernacular-introspection.md](../../specification/vernacular-introspection.md) |
+| [assumption-auditing.md](assumption-auditing.md) | [specification/assumption-auditing.md](../../specification/assumption-auditing.md) |
+| [universe-inspection.md](universe-inspection.md) | [specification/universe-inspection.md](../../specification/universe-inspection.md) |
+| [typeclass-debugging.md](typeclass-debugging.md) | [specification/typeclass-debugging.md](../../specification/typeclass-debugging.md) |
+| [deep-dependency-analysis.md](deep-dependency-analysis.md) | [specification/deep-dependency-analysis.md](../../specification/deep-dependency-analysis.md) |
+| [literate-documentation.md](literate-documentation.md) | [specification/literate-documentation.md](../../specification/literate-documentation.md) |
+| [code-extraction-management.md](code-extraction-management.md) | [specification/code-extraction-management.md](../../specification/code-extraction-management.md) |
+| [independent-proof-checking.md](independent-proof-checking.md) | [specification/independent-proof-checking.md](../../specification/independent-proof-checking.md) |
+| [build-system-integration.md](build-system-integration.md) | [specification/build-system-integration.md](../../specification/build-system-integration.md) |
+| [notation-inspection.md](notation-inspection.md) | [specification/notation-inspection.md](../../specification/notation-inspection.md) |
+| [tactic-documentation.md](tactic-documentation.md) | [specification/tactic-documentation.md](../../specification/tactic-documentation.md) |

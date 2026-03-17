@@ -1,0 +1,207 @@
+#!/bin/bash
+
+# Poule end-user launcher
+#
+# Quick setup:
+#   cp poule ~/bin/poule && chmod +x ~/bin/poule
+#   echo 'export POULE_PROJECT_DIR=~/Projects/my-coq-project' >> ~/.zshrc
+#   echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.zshrc
+#
+# Then just run: poule
+
+set -euo pipefail
+
+IMAGE="ghcr.io/ekirton/poule"
+
+# ── Project directory ─────────────────────────────────────────────────────────
+# Use POULE_PROJECT_DIR if set; otherwise fall back to the current directory.
+PROJECT_DIR="${POULE_PROJECT_DIR:-$PWD}"
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+NO_PULL=false
+ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-pull)
+            NO_PULL=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: poule [--no-pull] [COMMAND]"
+            echo ""
+            echo "Run Claude Code in the Poule container with your Coq project mounted."
+            echo ""
+            echo "OPTIONS:"
+            echo "  --no-pull    Skip pulling the latest image from the registry"
+            echo "  --help, -h   Show this help message"
+            echo ""
+            echo "ENVIRONMENT:"
+            echo "  POULE_PROJECT_DIR   Directory to mount (default: current directory)"
+            echo "  ANTHROPIC_API_KEY   Required — your Anthropic API key"
+            echo ""
+            echo "EXAMPLES:"
+            echo "  poule                  Start interactive shell in POULE_PROJECT_DIR"
+            echo "  poule claude           Launch Claude Code directly"
+            echo "  poule --no-pull        Skip image update check"
+            echo "  poule coqc --version   Run a one-off command in the container"
+            exit 0
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# ── Preflight checks ──────────────────────────────────────────────────────────
+if ! command -v docker >/dev/null 2>&1; then
+    echo "Error: Docker is not installed. See https://docs.docker.com/get-docker/"
+    exit 1
+fi
+
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "Error: ANTHROPIC_API_KEY is not set."
+    echo "Add it to your ~/.zshrc:"
+    echo "  export ANTHROPIC_API_KEY=sk-ant-..."
+    exit 1
+fi
+
+if [ ! -d "$PROJECT_DIR" ]; then
+    echo "Error: Project directory does not exist: $PROJECT_DIR"
+    echo "Set POULE_PROJECT_DIR to a valid directory in your ~/.zshrc."
+    exit 1
+fi
+
+if [ "$PROJECT_DIR" = "$HOME" ]; then
+    echo "Error: Refusing to mount the home directory for security reasons."
+    echo "Set POULE_PROJECT_DIR to a specific project directory."
+    exit 1
+fi
+
+# ── Pull latest image ─────────────────────────────────────────────────────────
+if [ "$NO_PULL" = false ]; then
+    docker pull "$IMAGE"
+fi
+
+# ── Persistent home directory ─────────────────────────────────────────────────
+CONTAINER_HOME="$HOME/poule-home"
+if [ ! -d "$CONTAINER_HOME" ]; then
+    echo "Creating Poule home directory: $CONTAINER_HOME"
+    mkdir -p "$CONTAINER_HOME"
+fi
+chmod 700 "$CONTAINER_HOME"
+
+# ── SSH key permissions (container requires strict modes) ─────────────────────
+SSH_DIR="$CONTAINER_HOME/.ssh"
+if [ -d "$SSH_DIR" ]; then
+    chmod 700 "$SSH_DIR"
+    find "$SSH_DIR" -maxdepth 1 -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} \;
+    for f in "$SSH_DIR"/*.pub "$SSH_DIR/config" "$SSH_DIR/known_hosts" "$SSH_DIR/authorized_keys"; do
+        [ -f "$f" ] && chmod 644 "$f"
+    done
+fi
+
+# ── First-run: Claude Code settings ──────────────────────────────────────────
+CLAUDE_DIR="$CONTAINER_HOME/.claude"
+mkdir -p "$CLAUDE_DIR"
+
+if [ ! -f "$CLAUDE_DIR/settings.json" ]; then
+    echo "Initializing Claude Code settings..."
+    cat > "$CLAUDE_DIR/settings.json" << 'EOF'
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "skipDangerousModePermissionPrompt": true
+}
+EOF
+fi
+
+# ── First-run: MCP server configuration ───────────────────────────────────────
+if [ ! -f "$CLAUDE_DIR/mcp.json" ]; then
+    echo "Configuring Poule MCP server..."
+    cat > "$CLAUDE_DIR/mcp.json" << 'EOF'
+{
+  "mcpServers": {
+    "coq-search": {
+      "command": "uv",
+      "args": ["run", "--project", "/app", "python", "-m", "poule.server", "--db", "/data/index.db"]
+    }
+  }
+}
+EOF
+fi
+
+# ── First-run: zsh configuration ──────────────────────────────────────────────
+if [ ! -f "$CONTAINER_HOME/.zshrc" ]; then
+    cat > "$CONTAINER_HOME/.zshrc" << 'EOF'
+# Poule container zsh configuration
+_git_branch_colored() {
+  local branch=$(git branch --show-current 2>/dev/null)
+  if [ -n "$branch" ]; then
+    if [ "$branch" = "main" ]; then
+      echo "%F{red}[$branch]%f"
+    else
+      echo "%F{green}[$branch]%f"
+    fi
+  fi
+}
+setopt PROMPT_SUBST
+PROMPT='%F{cyan}[poule]%f $(_git_branch_colored)%F{blue}[%~]%f$ '
+HISTFILE=~/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000
+export PATH="/opt/opam/coq/bin:$HOME/.local/bin:$PATH"
+export UV_LINK_MODE="copy"
+alias claude='claude --dangerously-skip-permissions'
+EOF
+fi
+
+# ── First-run: download Coq search index ──────────────────────────────────────
+DATA_DIR="$CONTAINER_HOME/data"
+mkdir -p "$DATA_DIR"
+
+if [ ! -f "$DATA_DIR/index.db" ]; then
+    echo ""
+    echo "Downloading Coq search index (first run only)..."
+    if docker run --rm \
+        -v "$DATA_DIR:/data" \
+        --entrypoint sh \
+        "$IMAGE" \
+        -c 'uv run --project /app python -m poule.cli download-index --output /data/index.db'; then
+        echo "Index downloaded successfully."
+    else
+        echo "Warning: Index download failed. Retry from inside the container:"
+        echo "  uv run --project /app python -m poule.cli download-index --output ~/data/index.db"
+    fi
+    echo ""
+fi
+
+# ── Claude symlink (home mount hides build-time symlinks) ─────────────────────
+INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+HOST_USER=$(id -un)
+
+echo "Starting Poule in: $PROJECT_DIR"
+
+if [ ${#ARGS[@]} -eq 0 ]; then
+    docker run -it --rm \
+        -v "$PROJECT_DIR:$PROJECT_DIR" \
+        -v "$CONTAINER_HOME:/home/$HOST_USER" \
+        -v "$DATA_DIR:/data" \
+        -w "$PROJECT_DIR" \
+        -e ANTHROPIC_API_KEY \
+        -e TZ="${TZ:-UTC}" \
+        "$IMAGE" \
+        zsh -c "$INIT_CMD; exec zsh"
+else
+    docker run --rm \
+        -v "$PROJECT_DIR:$PROJECT_DIR" \
+        -v "$CONTAINER_HOME:/home/$HOST_USER" \
+        -v "$DATA_DIR:/data" \
+        -w "$PROJECT_DIR" \
+        -e ANTHROPIC_API_KEY \
+        -e TZ="${TZ:-UTC}" \
+        "$IMAGE" \
+        zsh -c "$INIT_CMD; ${ARGS[*]}"
+fi

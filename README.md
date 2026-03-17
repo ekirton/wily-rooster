@@ -43,31 +43,37 @@ Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides m
 
 Requires [Docker](https://docs.docker.com/get-docker/) and an [Anthropic API key](https://console.anthropic.com/).
 
+**1. Get the launcher script**
+
 ```bash
-docker pull ghcr.io/ekirton/poule
-
-cd ~/Projects/my-coq-project
-docker run -it --rm \
-  -v "$PWD:$PWD" -w "$PWD" \
-  -e ANTHROPIC_API_KEY \
-  ghcr.io/ekirton/poule
-
-claude      # Inside the container — start Claude Code
+git clone https://github.com/ekirton/poule.git
+cp poule/poule ~/bin/poule
+chmod +x ~/bin/poule
 ```
 
-Everything runs inside the container — no local Coq, Python, or opam installation required.
+**2. Add to your `~/.zshrc`**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...          # your Anthropic API key
+export POULE_PROJECT_DIR=~/Projects/my-coq-project   # your Coq project
+```
+
+Make sure `~/bin` is on your `PATH` (add `export PATH="$HOME/bin:$PATH"` if needed).
+
+**3. Run**
+
+```bash
+poule          # drops you into a shell inside the container
+claude         # then start Claude Code
+```
+
+Everything runs inside the container — no local Coq, Python, or opam installation required. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the Coq search index automatically.
+
+If you want to use a different project for a one-off session, just `cd` into it and run `poule` — the launcher falls back to `$PWD` when `POULE_PROJECT_DIR` is not set.
 
 ### Persistent home directory
 
-Poule stores Claude Code settings, shell history, authentication tokens, and the search index in a persistent home directory. Mount a volume to preserve state across sessions:
-
-```bash
-docker run -it --rm \
-  -v "$PWD:$PWD" -w "$PWD" \
-  -v ~/poule-home:/home/poule \
-  -e ANTHROPIC_API_KEY \
-  ghcr.io/ekirton/poule
-```
+State is preserved across sessions in `~/poule-home`:
 
 ```
 ~/poule-home/
@@ -86,23 +92,19 @@ cp ~/.gitconfig ~/poule-home/.gitconfig
 cp -r ~/.ssh ~/poule-home/.ssh
 ```
 
-### Launcher script
-
-For a more ergonomic workflow, developers can use the `poule` launcher script, which handles image builds, persistent home setup, index downloads, and auto-updates. See [DEVELOPMENT.md](DEVELOPMENT.md) for details.
-
 ### Updating
 
-To pull a newer container image:
+The launcher pulls the latest image each time it runs. To skip the pull:
 
 ```bash
-docker pull ghcr.io/ekirton/poule
+poule --no-pull
 ```
 
 To download a newer search index:
 
 ```bash
 rm ~/poule-home/data/index.db
-# Re-enter the container — triggers automatic re-download
+poule    # re-download triggers automatically
 ```
 
 ## Use with Claude Code

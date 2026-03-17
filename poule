@@ -117,14 +117,13 @@ EOF
 fi
 
 # ── First-run: MCP server configuration ───────────────────────────────────────
-if [ ! -f "$CLAUDE_DIR/mcp.json" ]; then
-    echo "Configuring Poule MCP server..."
+# (upgrade from stdio to SSE if an old config exists)
+if [ ! -f "$CLAUDE_DIR/mcp.json" ] || grep -q '"command"' "$CLAUDE_DIR/mcp.json" 2>/dev/null; then
     cat > "$CLAUDE_DIR/mcp.json" << 'EOF'
 {
   "mcpServers": {
     "coq-search": {
-      "command": "uv",
-      "args": ["run", "--project", "/app", "python", "-m", "poule.server", "--db", "/data/index.db"]
+      "url": "http://127.0.0.1:3000/sse"
     }
   }
 }
@@ -176,15 +175,16 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
     echo ""
 fi
 
-# ── Claude symlink (home mount hides build-time symlinks) ─────────────────────
-INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
-
 # ── Run ───────────────────────────────────────────────────────────────────────
 HOST_USER=$(id -un)
+
+# INIT_CMD is used for pass-through commands that bypass the container entrypoint.
+INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
 
 echo "Starting Poule in: $PROJECT_DIR"
 
 if [ ${#ARGS[@]} -eq 0 ]; then
+    # No command: let the container entrypoint start Claude Code (Opus) directly.
     docker run -it --rm \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
@@ -192,8 +192,7 @@ if [ ${#ARGS[@]} -eq 0 ]; then
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
-        "$IMAGE" \
-        zsh -c "$INIT_CMD; exec zsh"
+        "$IMAGE"
 else
     docker run --rm \
         -v "$PROJECT_DIR:$PROJECT_DIR" \

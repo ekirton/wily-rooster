@@ -1,0 +1,94 @@
+#!/bin/bash
+# Poule MCP server lifecycle management.
+#
+# Usage: poule-mcp {start|stop|restart|status|logs}
+#
+# Runs the Poule MCP server in SSE mode as a background daemon so that
+# Claude Code can connect to it independently of its own process lifetime.
+# This allows the developer (or Claude itself) to restart the server after
+# editing source code without exiting Claude.
+
+set -euo pipefail
+
+PIDFILE="/tmp/poule-mcp.pid"
+LOGFILE="/tmp/poule-mcp.log"
+DB="${POULE_MCP_DB:-/data/index.db}"
+PORT="${POULE_MCP_PORT:-3000}"
+HOST="127.0.0.1"
+
+_is_running() {
+    [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
+}
+
+_wait_ready() {
+    for i in $(seq 1 50); do
+        if bash -c "echo >/dev/tcp/$HOST/$PORT" 2>/dev/null; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    return 1
+}
+
+case "${1:-}" in
+    start)
+        if _is_running; then
+            echo "Poule MCP server already running (pid $(cat "$PIDFILE"), port $PORT)"
+            exit 0
+        fi
+        echo "Starting Poule MCP server on $HOST:$PORT..."
+        nohup uv run --project /app python -m poule.server \
+            --db "$DB" --transport sse --host "$HOST" --port "$PORT" \
+            >> "$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        if _wait_ready; then
+            echo "Poule MCP server ready (pid $(cat "$PIDFILE"))"
+        else
+            echo "Warning: server did not become ready within 5s (pid $(cat "$PIDFILE"))"
+            echo "Check logs: poule-mcp logs"
+        fi
+        ;;
+
+    stop)
+        if _is_running; then
+            PID=$(cat "$PIDFILE")
+            kill "$PID"
+            rm -f "$PIDFILE"
+            echo "Stopped Poule MCP server (pid $PID)"
+        else
+            rm -f "$PIDFILE"
+            echo "Poule MCP server is not running"
+        fi
+        ;;
+
+    restart)
+        "$0" stop || true
+        sleep 0.3
+        "$0" start
+        ;;
+
+    status)
+        if _is_running; then
+            echo "Poule MCP server running (pid $(cat "$PIDFILE"), port $PORT)"
+        else
+            echo "Poule MCP server stopped"
+        fi
+        ;;
+
+    logs)
+        if [ -f "$LOGFILE" ]; then
+            tail -f "$LOGFILE"
+        else
+            echo "No log file yet ($LOGFILE)"
+        fi
+        ;;
+
+    *)
+        echo "Usage: poule-mcp {start|stop|restart|status|logs}"
+        echo ""
+        echo "Environment:"
+        echo "  POULE_MCP_DB    Path to search index (default: /data/index.db)"
+        echo "  POULE_MCP_PORT  SSE port (default: 3000)"
+        exit 1
+        ;;
+esac

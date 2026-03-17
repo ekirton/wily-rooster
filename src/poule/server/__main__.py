@@ -1230,8 +1230,8 @@ def _dispatch_tool(ctx: _ServerContext, name: str, arguments: dict):
         return format_error(PARSE_ERROR, f"Unknown tool: {name}")
 
 
-async def run_server(db_path: Path, log_level: str = "INFO"):
-    """Start the MCP server with stdio transport."""
+async def _init_context(db_path: Path, log_level: str) -> _ServerContext:
+    """Configure logging and initialise the server context (index + session manager)."""
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         stream=sys.stderr,
@@ -1240,7 +1240,6 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
 
     ctx = _ServerContext()
 
-    # Initialize proof session manager (independent of search index)
     from poule.session.manager import SessionManager
 
     async def _default_backend_factory(file_path: str):
@@ -1268,6 +1267,11 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
             ctx.expected_version = getattr(exc, "expected", "unknown")
             logger.error("Schema version mismatch: %s", exc)
 
+    return ctx
+
+
+def _build_server(ctx: _ServerContext) -> Server:
+    """Create the MCP Server and register tool handlers against *ctx*."""
     server = Server("poule")
 
     @server.list_tools()
@@ -1297,8 +1301,54 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
         is_error = result.get("isError", False)
         return CallToolResult(content=mcp_content, isError=is_error)
 
+    return server
+
+
+async def run_server(db_path: Path, log_level: str = "INFO"):
+    """Start the MCP server with stdio transport."""
+    ctx = await _init_context(db_path, log_level)
+    server = _build_server(ctx)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+async def run_server_sse(
+    db_path: Path,
+    host: str = "127.0.0.1",
+    port: int = 3000,
+    log_level: str = "INFO",
+):
+    """Start the MCP server with SSE transport (HTTP daemon mode).
+
+    Listens on ``http://<host>:<port>/sse`` for Claude Code connections.
+    The server runs as a persistent background process; Claude Code reconnects
+    to it via the ``url`` field in mcp.json rather than spawning a subprocess.
+    """
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.responses import Response
+    from starlette.routing import Mount, Route
+
+    ctx = await _init_context(db_path, log_level)
+    server = _build_server(ctx)
+
+    sse = SseServerTransport("/messages/")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+        return Response()
+
+    starlette_app = Starlette(routes=[
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages/", app=sse.handle_post_message),
+    ])
+
+    config = uvicorn.Config(starlette_app, host=host, port=port, log_level=log_level.lower())
+    uv_server = uvicorn.Server(config)
+    logger.info("Poule MCP server (SSE) listening on %s:%d", host, port)
+    await uv_server.serve()
 
 
 def main():
@@ -1315,8 +1365,28 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level (default: INFO)",
     )
+    parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "sse"],
+        help="Transport protocol: stdio (default) or sse (HTTP daemon)",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="SSE server host (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=3000,
+        help="SSE server port (default: 3000)",
+    )
     args = parser.parse_args()
-    asyncio.run(run_server(args.db, args.log_level))
+    if args.transport == "sse":
+        asyncio.run(run_server_sse(args.db, args.host, args.port, args.log_level))
+    else:
+        asyncio.run(run_server(args.db, args.log_level))
 
 
 if __name__ == "__main__":

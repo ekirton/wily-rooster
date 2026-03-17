@@ -44,7 +44,6 @@ poule --dev uv run pytest                   # Run tests with live source (recomm
 poule --dev uv run pytest -v                # Verbose test output
 poule uv run --project /app pytest          # Run tests (baked-in source)
 poule coqc --version                        # Run a Coq command in the container
-poule claude                                # Run Claude Code directly
 ```
 
 The launcher manages:
@@ -53,6 +52,40 @@ The launcher manages:
 - Claude Code MCP server auto-configuration
 - Search index download on first run
 - Automatic Claude Code updates (deferred to session exit)
+
+### MCP server lifecycle
+
+The Poule MCP server runs in **SSE mode** as a background daemon inside the container, so Claude Code connects to it over HTTP rather than via a spawned subprocess. This lets the developer (or Claude itself) restart the server after editing code without exiting Claude.
+
+The `poule-mcp` script manages the server:
+
+```bash
+poule-mcp start      # Start the MCP server in background (port 3000)
+poule-mcp stop       # Stop it
+poule-mcp restart    # Restart after editing server code
+poule-mcp status     # Check if running
+poule-mcp logs       # Tail the server log
+```
+
+`poule-mcp` is available inside both the production image (`poule:latest`) and the dev image (`poule:dev`).
+
+**Typical MCP development loop (inside the container shell):**
+
+```bash
+poule-mcp start         # start the server
+claude                  # open Claude — it connects to the running server
+# edit src/poule/server/ on the host (live-mounted in --dev mode)
+# ask Claude to restart the server:
+#   "restart the MCP server"  →  Claude runs: poule-mcp restart
+claude                  # open Claude again — picks up new code immediately
+```
+
+Environment variables to override defaults:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POULE_MCP_DB` | `/data/index.db` | Path to the search index |
+| `POULE_MCP_PORT` | `3000` | SSE listen port |
 
 ### Updating
 
@@ -109,7 +142,7 @@ flowchart TD
 
     MCHART["Mermaid Chart\nMCP Server"]
 
-    LLM -->|"MCP tool calls (stdio)"| MCP
+    LLM -->|"MCP tool calls (SSE)"| MCP
     TU -->|"CLI subcommands"| CLI
 
     MCP -->|"search queries"| RP

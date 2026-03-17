@@ -226,15 +226,13 @@ if [ ! -f "$CLAUDE_DIR/statusline.sh" ] || [ "$PROJECT_DIR/docker/statusline.sh"
     chmod +x "$CLAUDE_DIR/statusline.sh"
 fi
 
-# Auto-configure MCP server
-if [ ! -f "$CLAUDE_DIR/mcp.json" ]; then
-    echo "Configuring Poule MCP server..."
+# Auto-configure MCP server (SSE transport — upgrade from stdio if needed)
+if [ ! -f "$CLAUDE_DIR/mcp.json" ] || grep -q '"command"' "$CLAUDE_DIR/mcp.json" 2>/dev/null; then
     cat > "$CLAUDE_DIR/mcp.json" << 'EOF'
 {
   "mcpServers": {
     "coq-search": {
-      "command": "uv",
-      "args": ["run", "--project", "/app", "python", "-m", "poule.server", "--db", "/data/index.db"]
+      "url": "http://127.0.0.1:3000/sse"
     }
   }
 }

@@ -42,9 +42,13 @@ RUN opam switch create coq ocaml-base-compiler.4.14.2 && \
 # for non-root users.
 RUN mv /root/.opam /opt/opam && chmod -R a+rX /opt/opam && \
     find /opt/opam -type f \( -name "*.conf" -o -name "*.config" -o -name "*.install" \) \
-         -exec sed -i 's|/root/\.opam|/opt/opam|g' {} +
+         -exec sed -i 's|/root/\.opam|/opt/opam|g' {} + && \
+    printf 'stdlib="/opt/opam/coq/lib/ocaml"\n' >> /opt/opam/coq/lib/findlib.conf
 ENV OPAMROOT=/opt/opam
 ENV OCAMLFIND_CONF=/opt/opam/coq/lib/findlib.conf
+# COQLIB: tells coq-lsp where the Coq standard library lives (path is baked
+# into the compiled coq binary at /root/.opam/... but opam was moved to /opt).
+ENV COQLIB=/opt/opam/coq/lib/coq
 ENV PATH="/opt/opam/coq/bin:${PATH}"
 
 # ============================================================================
@@ -96,6 +100,10 @@ WORKDIR /app
 
 # Copy only dependency manifests to cache the deps layer
 COPY pyproject.toml uv.lock ./
+
+# Install MCP server management script (available in both dev and production images)
+COPY docker/poule-mcp /usr/local/bin/poule-mcp
+RUN chmod +x /usr/local/bin/poule-mcp
 
 # Create venv as the app user so it's writable when source is installed later
 RUN chown -R ${HOST_UID}:${HOST_GID} /app
@@ -156,4 +164,10 @@ LABEL claude.code.version=${CLAUDE_CODE_VERSION}
 
 VOLUME ["/data"]
 ENV SHELL=/bin/zsh
-CMD ["/bin/zsh"]
+
+USER root
+COPY docker/entrypoint.sh /usr/local/bin/poule-entrypoint
+RUN chmod +x /usr/local/bin/poule-entrypoint
+USER ${HOST_USER}
+
+ENTRYPOINT ["/usr/local/bin/poule-entrypoint"]

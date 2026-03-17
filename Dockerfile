@@ -33,7 +33,7 @@ RUN opam init --disable-sandboxing --auto-setup --bare && \
 RUN opam switch create coq ocaml-base-compiler.4.14.2 && \
     eval $(opam env --switch=coq) && \
     opam repo add coq-released https://coq.inria.fr/opam/released --all-switches && \
-    opam install -y coq.8.19.2 coq-lsp && \
+    opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune && \
     opam clean -a -c -s --logs
 
 # Move opam to /opt so it's accessible to any user
@@ -88,7 +88,11 @@ WORKDIR /app
 # Copy only dependency manifests to cache the deps layer
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --frozen --group dev && chmod -R a+rX /app
+# Create venv as the app user so it's writable when source is installed later
+RUN chown -R ${HOST_UID}:${HOST_GID} /app
+USER ${HOST_USER}
+RUN uv sync --frozen --group dev
+USER root
 
 # ============================================================================
 # Stage 3: runtime — Application code + Claude Code
@@ -96,11 +100,10 @@ RUN uv sync --frozen --group dev && chmod -R a+rX /app
 # ============================================================================
 FROM app-deps AS runtime
 
-COPY src/ src/
-COPY test/ test/
-COPY examples/ examples/
-COPY CLAUDE.md README.md ./
-RUN chmod -R a+rX /app
+COPY --chown=${HOST_UID}:${HOST_GID} src/ src/
+COPY --chown=${HOST_UID}:${HOST_GID} test/ test/
+COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
+COPY --chown=${HOST_UID}:${HOST_GID} CLAUDE.md README.md ./
 
 # Cache-bust: changing this arg forces re-download of Claude Code
 ARG CACHEBUST_CLAUDE=0

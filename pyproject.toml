@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp",
     "numpy",
+    "alectryon",
 ]
 
 [dependency-groups]

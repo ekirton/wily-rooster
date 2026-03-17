@@ -22,7 +22,9 @@ RUN curl -fsSL https://raw.githubusercontent.com/ocaml/opam/master/shell/install
         bash -s -- --no-backup
 
 # Initialize opam without sandboxing (runs inside container already)
-RUN opam init --disable-sandboxing --auto-setup --bare
+# --bare skips default switch but also skips the default repo, so add it back
+RUN opam init --disable-sandboxing --auto-setup --bare && \
+    opam repository add --all default https://opam.ocaml.org
 
 # Create OCaml switch and install Coq + coq-lsp
 RUN opam switch create coq ocaml-base-compiler.4.14.2 && \

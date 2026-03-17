@@ -2,8 +2,8 @@
 
 The command-line interface for indexing, search, proof replay, and batch extraction operations.
 
-**Features**: [CLI Search](../features/cli-search.md), [CLI Proof Replay](../features/cli-proof-replay.md), [Batch Extraction CLI](../features/batch-extraction-cli.md), [Extraction Quality Reports](../features/extraction-quality-reports.md)
-**Stories**: [Epic 1: Library Indexing](../requirements/stories/tree-search-mcp.md#epic-1-library-indexing), [Epic 7: Standalone CLI Search](../requirements/stories/tree-search-mcp.md#epic-7-standalone-cli-search), [Epic 8: Batch Proof Replay CLI](../requirements/stories/proof-interaction-protocol.md#epic-8-batch-proof-replay-cli), [Epics 1, 4, 5: Batch Extraction](../requirements/stories/training-data-extraction.md#epic-1-project-level-extraction)
+**Features**: [CLI Search](../features/cli-search.md), [CLI Proof Replay](../features/cli-proof-replay.md), [Batch Extraction CLI](../features/batch-extraction-cli.md), [Extraction Quality Reports](../features/extraction-quality-reports.md), [Model Training CLI](../features/model-training-cli.md)
+**Stories**: [Epic 1: Library Indexing](../requirements/stories/tree-search-mcp.md#epic-1-library-indexing), [Epic 7: Standalone CLI Search](../requirements/stories/tree-search-mcp.md#epic-7-standalone-cli-search), [Epic 8: Batch Proof Replay CLI](../requirements/stories/proof-interaction-protocol.md#epic-8-batch-proof-replay-cli), [Epics 1, 4, 5: Batch Extraction](../requirements/stories/training-data-extraction.md#epic-1-project-level-extraction), [Epics 1–2, 5: Neural Training](../requirements/stories/neural-premise-selection.md#epic-1-model-training)
 
 ---
 
@@ -15,6 +15,7 @@ A single CLI entry point exposes four command groups:
 - **Search subcommands** — `search-by-name`, `search-by-type`, `search-by-structure`, `search-by-symbols`, `get-lemma`, `find-related`, `list-modules`
 - **Proof subcommands** — `replay-proof`
 - **Extraction subcommands** (Phase 3) — `extract`, `extract-deps`, `quality-report`
+- **Neural subcommands** (Neural Premise Selection) — `train`, `fine-tune`, `evaluate`, `compare`, `quantize`, `validate-training-data`
 
 All search subcommands share common options:
 
@@ -286,6 +287,73 @@ The extraction CLI creates the Extraction Campaign Orchestrator, which reuses th
 
 The `extract` command writes JSON Lines to `--output`. Progress is reported to stderr during extraction. On completion, a human-readable summary is printed to stderr. The JSON Lines output file contains only machine-readable records.
 
+## Neural Subcommand Signatures (Neural Premise Selection)
+
+See [neural-training.md](neural-training.md) for the full training pipeline design.
+
+### train
+
+```
+poule train <traces.jsonl> [<traces.jsonl> ...] --db <index.db> --output <checkpoint.pt> [--epochs N] [--batch-size N] [--lr F]
+```
+
+Positional arguments: one or more JSON Lines extraction output files.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--db` | path | required | Path to the SQLite index database (provides premise corpus) |
+| `--output` | path | required | Path for the trained model checkpoint |
+| `--epochs` | integer | 20 | Maximum training epochs |
+| `--batch-size` | integer | 256 | Proof states per batch |
+| `--lr` | float | 2e-5 | Learning rate |
+
+### fine-tune
+
+```
+poule fine-tune --checkpoint <pre-trained.pt> --data <traces.jsonl> --db <index.db> --output <fine-tuned.pt> [--epochs N] [--lr F]
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--checkpoint` | path | required | Pre-trained model checkpoint to initialize from |
+| `--data` | path | required | JSON Lines extraction output for the target project |
+| `--db` | path | required | Path to the SQLite index database |
+| `--output` | path | required | Path for the fine-tuned model checkpoint |
+| `--epochs` | integer | 10 | Maximum fine-tuning epochs |
+| `--lr` | float | 5e-6 | Learning rate (lower than training to avoid catastrophic forgetting) |
+
+### evaluate
+
+```
+poule evaluate --checkpoint <model.pt> --test-data <test.jsonl> --db <index.db> [--json]
+```
+
+Reports Recall@1, Recall@10, Recall@32, MRR, and evaluation latency.
+
+### compare
+
+```
+poule compare --checkpoint <model.pt> --test-data <test.jsonl> --db <index.db> [--json]
+```
+
+Reports neural-only, symbolic-only, and union Recall@32 with overlap and exclusivity statistics.
+
+### quantize
+
+```
+poule quantize --checkpoint <model.pt> --output <model.onnx>
+```
+
+Converts a PyTorch checkpoint to INT8 ONNX with validation.
+
+### validate-training-data
+
+```
+poule validate-training-data <traces.jsonl> [<traces.jsonl> ...]
+```
+
+Validates extracted data for training readiness. Reports pair counts, premise distributions, and data quality warnings.
+
 ## Error Handling
 
 | Condition | Behavior |
@@ -304,3 +372,7 @@ The `extract` command writes JSON Lines to `--output`. Progress is reported to s
 | No proofs found in extract | Print warning to stderr, exit 0 |
 | Checkpoint file corrupted (resume) | Print warning to stderr, fall back to full extraction |
 | Missing required args (extract) | Print usage to stderr, exit 2 |
+| Model checkpoint not found (evaluate, compare, quantize) | Print error to stderr, exit 1 |
+| Training data validation failure (train, fine-tune) | Print validation report to stderr, exit 1 |
+| GPU out of memory (train, fine-tune) | Print suggestion to reduce batch size to stderr, exit 1 |
+| Quantization validation failure (quantize) | Print max cosine distance to stderr, exit 1 |

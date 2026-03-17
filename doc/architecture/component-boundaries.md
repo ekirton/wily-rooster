@@ -18,6 +18,7 @@ System-level view of all components, their boundaries, and the dependency graph.
 | Mermaid Renderer | Proof state, proof tree, dependency, and sequence diagram generation as Mermaid syntax | [mermaid-renderer.md](mermaid-renderer.md) |
 | Proof Search Engine | Best-first tree search over tactic candidates, candidate generation (LLM + solver + few-shot), state caching, diversity filtering | [proof-search-engine.md](proof-search-engine.md) |
 | Fill Admits Orchestrator | Admit location in .v files, per-admit session lifecycle, proof search invocation, script assembly | [fill-admits-orchestrator.md](fill-admits-orchestrator.md) |
+| Neural Training Pipeline | Bi-encoder training, evaluation, fine-tuning, quantization from extracted proof traces | [neural-training.md](neural-training.md) |
 | Claude Code / LLM | Intent interpretation, query formulation, result filtering, explanation | External (not owned by this project) |
 
 ### Cross-Cutting Concerns
@@ -30,6 +31,7 @@ System-level view of all components, their boundaries, and the dependency graph.
 | Extraction Checkpointing | Incremental re-extraction, campaign resumption, checkpoint file management (P1) | [extraction-checkpointing.md](extraction-checkpointing.md) |
 | Extraction Reporting | Quality reports, scope filtering, benchmark generation, ML export (P1/P2) | [extraction-reporting.md](extraction-reporting.md) |
 | Extraction Dependency Graph | Theorem-level dependency graph extraction from premise annotations (P1) | [extraction-dependency-graph.md](extraction-dependency-graph.md) |
+| Neural Retrieval Channel | Neural embedding computation, vector search, integration into retrieval pipeline | [neural-retrieval.md](neural-retrieval.md) |
 
 Proof Serialization is used by the MCP Server (for formatting responses) and the Proof Session Manager (for trace export). It is not a standalone runtime component — it is a shared serialization contract.
 
@@ -78,6 +80,8 @@ Compiled .vo files           Fill Admits Orchestrator
 ```
 
 Note: The four subsystems — search, proof interaction, extraction, and proof search — have distinct dependency patterns. Search and proof interaction are independent of each other. Extraction depends on the Proof Session Manager but not search. Proof search is the first component that bridges search and proof interaction at runtime: it uses the Proof Session Manager for tactic verification and optionally uses the Retrieval Pipeline for premise retrieval. The Fill Admits Orchestrator depends on both the Proof Search Engine and the Proof Session Manager. The Mermaid Renderer is a pure function component with no runtime dependencies.
+
+The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads extracted training data (JSON Lines from Phase 3) and the SQLite index (for premise corpus), and produces model checkpoints. The Neural Retrieval Channel is a cross-cutting concern: at indexing time it computes embeddings (extending Coq Library Extraction → Storage); at query time it provides a retrieval channel (extending the Retrieval Pipeline). Both are optional — all other components function without them.
 
 ## Boundary Contracts
 
@@ -267,6 +271,37 @@ Note: The four subsystems — search, proof interaction, extraction, and proof s
 | Phase 1 behavior | Validates `schema_version` only; library versions stored for informational purposes. Schema mismatch → `INDEX_VERSION_MISMATCH` error directing user to re-index manually. |
 | Phase 2 behavior | Additionally validates `coq_version` and `mathcomp_version` against installed versions; mismatch → `INDEX_VERSION_MISMATCH` error. |
 
+### Retrieval Pipeline → Neural Retrieval Channel (optional)
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Internal function calls (in-process) |
+| Direction | Request-response |
+| Input | Query text (pretty-printed Coq expression or space-joined symbol names) |
+| Output | Ranked list of (declaration_id, cosine_similarity_score) pairs |
+| Availability | Optional; pipeline proceeds with existing channels when neural channel is unavailable |
+| Latency budget | < 100ms per query on CPU |
+
+### Coq Library Extraction → Neural Retrieval Channel (optional)
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Internal function calls (in-process), runs after standard indexing pass |
+| Direction | Write-only (embeddings → Storage) |
+| Input | All declaration statements from the SQLite index |
+| Output | Embedding vectors written to `embeddings` table; model hash written to `index_meta` |
+| Availability | Optional; runs only when a neural model checkpoint is present |
+
+### CLI → Neural Training Pipeline
+
+| Property | Value |
+|----------|-------|
+| Mechanism | Internal function calls (in-process) |
+| Direction | Request-response (blocking, long-running) |
+| Input | Paths to JSON Lines extraction files, index database, and model checkpoint (for fine-tune/evaluate/compare) |
+| Output | Model checkpoint (.pt), quantized model (.onnx), or evaluation report; exit code 0 on success, 1 on error |
+| Dependencies | Extracted training data (JSON Lines from Phase 3), SQLite index database (for premise corpus and symbolic comparison) |
+
 ## Source-to-Specification Mapping
 
 | Architecture Document | Produces Specifications |
@@ -290,3 +325,5 @@ Note: The four subsystems — search, proof interaction, extraction, and proof s
 | [data-models/extraction-types.md](data-models/extraction-types.md) | [specification/data-structures.md](../../specification/data-structures.md) §4.8 |
 | [proof-search-engine.md](proof-search-engine.md) | specification/proof-search-engine.md (pending) |
 | [fill-admits-orchestrator.md](fill-admits-orchestrator.md) | specification/fill-admits-orchestrator.md (pending) |
+| [neural-retrieval.md](neural-retrieval.md) | specification/neural-retrieval.md (pending) |
+| [neural-training.md](neural-training.md) | specification/neural-training.md (pending) |

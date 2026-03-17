@@ -55,6 +55,14 @@ CREATE TABLE index_meta (
 --   'coq_version'     → Coq/Rocq version used during indexing
 --   'mathcomp_version' → MathComp version (if indexed), or "none"
 --   'created_at'      → ISO 8601 timestamp of index creation
+-- Optional keys (Neural Premise Selection):
+--   'neural_model_hash' → SHA-256 hash of the model checkpoint used to compute embeddings
+
+-- Neural premise embeddings (added by Neural Premise Selection)
+CREATE TABLE embeddings (
+  decl_id INTEGER PRIMARY KEY REFERENCES declarations(id) ON DELETE CASCADE,
+  vector BLOB NOT NULL              -- 768 × 4 bytes = 3,072 bytes, raw float32
+);
 
 -- Full-text search
 CREATE VIRTUAL TABLE declarations_fts USING fts5(
@@ -76,6 +84,8 @@ CREATE VIRTUAL TABLE declarations_fts USING fts5(
 **Index metadata table**: The `index_meta` table stores key-value pairs for the index schema version and the versions of indexed libraries. On server startup, the schema version is compared against the tool's expected version; a mismatch returns an error directing the user to re-index. Library versions are compared against the currently installed versions; a mismatch likewise returns an error. This table is the mechanism behind the index versioning behavior described in [library-indexing.md](../features/library-indexing.md).
 
 **Phase 1 kind values**: The `kind` column covers Phase 1 declaration kinds only (`lemma`, `theorem`, `definition`, `instance`, `inductive`, `constructor`, `axiom`). This set will expand in Phase 2 when additional Coq declaration forms (e.g., `record`, `class`) are supported.
+
+**Embeddings table**: The `embeddings` table stores dense vector embeddings for neural premise retrieval. Each embedding is a 768-dimensional float32 vector stored as a raw BLOB (3,072 bytes per row). The table is populated during an optional embedding pass after standard indexing, only when a neural model checkpoint is available. When no model is available, the table is empty or absent — the retrieval pipeline treats this as "neural channel unavailable." The `neural_model_hash` key in `index_meta` tracks which model produced the embeddings; a mismatch between the current model and the stored hash invalidates the embeddings. See [neural-retrieval.md](neural-retrieval.md) for the embedding computation pipeline.
 
 **Content-synced FTS5 constraints**: With `content=declarations`, the FTS5 index reads from the declarations table and does not independently track deletions or updates. The index is consistent only after the explicit `rebuild` command. Since the database is always built from scratch (no incremental updates), this is not a problem. Any future update/delete path would require manual trigger management for FTS5 consistency.
 

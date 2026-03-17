@@ -1,6 +1,9 @@
 # Poule à Coq
 
-*Poule ("Hen") is utilities for Coq ("Rooster")*
+*"Un coq a bien besoin d'une poule."
+(A rooster really needs a hen.)*
+
+Poule ("Hen") supports the Coq ("Rooster") procedural logic community.
 
 Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries — delivered as an MCP server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 

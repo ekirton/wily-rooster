@@ -1,8 +1,8 @@
-# Wily Rooster
+# Poule
 
 Semantic lemma search, interactive proof exploration, and proof visualization for Coq/Rocq libraries, exposed as an MCP server for Claude Code.
 
-Wily Rooster indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations. Proof states, proof trees, and dependency subgraphs can be visualized as Mermaid diagrams via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server) service.
+Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides structural, symbol-based, lexical, and type-based search through a multi-channel retrieval pipeline with reciprocal rank fusion. It also provides an interactive proof session protocol for observing proof states, submitting tactics, and extracting premise annotations. Proof states, proof trees, and dependency subgraphs can be visualized as Mermaid diagrams via the [Mermaid Chart MCP](https://github.com/Mermaid-Chart/mermaid-mcp-server) service.
 
 ## Features
 
@@ -272,32 +272,48 @@ Visualization tools generate Mermaid syntax text — they do not render images d
 
 ## Architecture
 
-```
-Claude Code / LLM          Terminal user
-  |                           |
-  | MCP tool calls (stdio)    | CLI subcommands
-  v                           v
-MCP Server                  CLI
-  |         |       |         |         |
-  | search  | proof | viz     | search  | proof
-  | queries | sess  | tools   | queries | replay
-  v         v       v         v         v
-Retrieval   Proof  Mermaid  Retrieval  Proof Session
-Pipeline    Sess.  Renderer Pipeline   Manager
-  |         Mgr      |        |
-  | SQLite    |      | pure    | SQLite
-  | queries   |      | fn      | queries
-  v           v      |         v
-Storage     Coq    (no       Storage
-(SQLite)    Backend deps)    (SQLite)
-  ^         Procs
-  |         (per-session)
-  | Writes during indexing
-Coq Library Extraction
-  |
-  | coq-lsp / SerAPI          Mermaid Chart
-  v                           MCP Server
-Compiled .vo files            (renders diagrams)
+```mermaid
+flowchart TD
+    LLM["Claude Code / LLM"]
+    TU["Terminal user"]
+
+    subgraph Interfaces
+        MCP["MCP Server"]
+        CLI["CLI"]
+    end
+
+    subgraph Core
+        RP["Retrieval Pipeline"]
+        PSM["Proof Session Manager"]
+        MR["Mermaid Renderer\n(pure function)"]
+    end
+
+    DB[("Storage\n(SQLite)")]
+
+    CB["Coq Backend Processes\n(per-session)"]
+
+    subgraph Indexing
+        EXT["Coq Library Extraction"]
+        VO["Compiled .vo files"]
+    end
+
+    MCHART["Mermaid Chart\nMCP Server"]
+
+    LLM -->|"MCP tool calls (stdio)"| MCP
+    TU -->|"CLI subcommands"| CLI
+
+    MCP -->|"search queries"| RP
+    MCP -->|"proof session"| PSM
+    MCP -->|"viz tools"| MR
+    CLI -->|"search queries"| RP
+    CLI -->|"proof replay"| PSM
+
+    RP -->|"SQLite queries"| DB
+    PSM --> CB
+    MR -->|"Mermaid syntax"| MCHART
+
+    EXT -->|"coq-lsp / SerAPI"| VO
+    EXT -->|"writes during indexing"| DB
 ```
 
 The search subsystem (Retrieval Pipeline + Storage), proof interaction subsystem (Proof Session Manager + Coq Backend Processes), and visualization subsystem (Mermaid Renderer) are independent at runtime. The Mermaid Renderer is a pure function component with no external dependencies — it generates Mermaid syntax text that the Mermaid Chart MCP server renders into images.

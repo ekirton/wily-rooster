@@ -1,4 +1,4 @@
-"""CLI subcommands for searching the Coq/Rocq declaration index and replaying proofs."""
+"""CLI subcommands for searching, proof replay, and batch extraction."""
 
 from __future__ import annotations
 
@@ -28,6 +28,9 @@ from wily_rooster.pipeline.search import (
 )
 from wily_rooster.server.validation import validate_limit
 from wily_rooster.storage.errors import IndexNotFoundError, IndexVersionError
+from wily_rooster.extraction.campaign import run_campaign
+from wily_rooster.extraction.dependency_graph import extract_dependency_graph
+from wily_rooster.extraction.reporting import generate_quality_report
 
 
 def _to_search_result(row: dict, score: float = 1.0) -> SearchResult:
@@ -396,6 +399,190 @@ def _handle_session_error(exc: SessionError) -> None:
     msg = formatter(exc) if formatter else (exc.message or str(exc))
     click.echo(msg, err=True)
     sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# extract
+# ---------------------------------------------------------------------------
+
+
+@cli.command("extract")
+@click.argument("project_dirs", nargs=-1, required=True)
+@click.option("--output", required=True, type=click.Path(), help="Path for JSON Lines output file.")
+@click.option("--name-pattern", default=None, help="Only extract proofs matching this name pattern (P1).")
+@click.option("--modules", default=None, help="Comma-separated module prefixes (P1).")
+@click.option("--incremental", is_flag=True, default=False, help="Re-extract only changed files (P1).")
+@click.option("--resume", "resume_flag", is_flag=True, default=False, help="Resume interrupted extraction (P1).")
+@click.option("--include-diffs", is_flag=True, default=False, help="Include proof state diffs (P1).")
+@click.option("--timeout", default=60, type=int, help="Per-proof timeout in seconds.")
+def cmd_extract(
+    project_dirs: tuple[str, ...],
+    output: str,
+    name_pattern: str | None,
+    modules: str | None,
+    incremental: bool,
+    resume_flag: bool,
+    include_diffs: bool,
+    timeout: int,
+):
+    """Batch extract proof traces from Coq project directories."""
+    if incremental and resume_flag:
+        click.echo("--incremental and --resume cannot be used together.", err=True)
+        sys.exit(2)
+
+    # Validate project directories exist
+    for d in project_dirs:
+        if not Path(d).is_dir():
+            click.echo(f"Project directory not found: {d}", err=True)
+            sys.exit(1)
+
+    scope_filter = None
+    if name_pattern or modules:
+        from wily_rooster.extraction.types import ScopeFilter
+        module_list = [m.strip() for m in modules.split(",")] if modules else None
+        scope_filter = ScopeFilter(name_pattern=name_pattern, module_prefixes=module_list)
+
+    kwargs = {}
+    if scope_filter is not None:
+        kwargs["scope_filter"] = scope_filter
+    if include_diffs:
+        kwargs["include_diffs"] = include_diffs
+    if timeout != 60:
+        kwargs["timeout_seconds"] = timeout
+
+    summary = asyncio.run(run_campaign(
+        list(project_dirs), output, kwargs,
+    ))
+
+    click.echo(f"Extraction complete.", err=True)
+    click.echo(f"  Theorems found:    {summary.total_theorems_found}", err=True)
+    click.echo(f"  Extracted:         {summary.total_extracted}", err=True)
+    click.echo(f"  Failed:            {summary.total_failed}", err=True)
+    click.echo(f"  Skipped:           {summary.total_skipped}", err=True)
+    click.echo(f"  Output: {output}", err=True)
+
+    if summary.total_extracted == 0 and summary.total_theorems_found > 0:
+        click.echo(
+            f"Extraction failed: all {summary.total_failed} proofs failed.", err=True,
+        )
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# extract-deps
+# ---------------------------------------------------------------------------
+
+
+@cli.command("extract-deps")
+@click.argument("extraction_output")
+@click.option("--output", required=True, type=click.Path(), help="Path for dependency graph output.")
+def cmd_extract_deps(extraction_output: str, output: str):
+    """Extract theorem dependency graph from extraction output."""
+    input_path = Path(extraction_output)
+    if not input_path.is_file():
+        click.echo(f"Input file not found: {extraction_output}", err=True)
+        sys.exit(1)
+    try:
+        extract_dependency_graph(input_path, Path(output))
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# quality-report
+# ---------------------------------------------------------------------------
+
+
+@cli.command("quality-report")
+@click.argument("extraction_output")
+@click.option("--json", "json_mode", is_flag=True, default=False, help="Output as JSON.")
+@click.option("--output", default=None, type=click.Path(), help="Write report to file.")
+def cmd_quality_report(extraction_output: str, json_mode: bool, output: str | None):
+    """Generate a quality report from extraction output."""
+    input_path = Path(extraction_output)
+    if not input_path.is_file():
+        click.echo(f"Input file not found: {extraction_output}", err=True)
+        sys.exit(1)
+
+    try:
+        report = generate_quality_report(input_path)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+
+    if json_mode:
+        report_text = _format_quality_report_json(report)
+    else:
+        report_text = _format_quality_report_human(report)
+
+    if output:
+        Path(output).write_text(report_text + "\n", encoding="utf-8")
+    else:
+        click.echo(report_text)
+
+
+def _format_quality_report_json(report) -> str:
+    """Format QualityReport as compact JSON."""
+    obj = {
+        "premise_coverage": report.premise_coverage,
+        "proof_length_distribution": {
+            "min": report.proof_length_distribution.min,
+            "max": report.proof_length_distribution.max,
+            "mean": report.proof_length_distribution.mean,
+            "median": report.proof_length_distribution.median,
+            "p25": report.proof_length_distribution.p25,
+            "p75": report.proof_length_distribution.p75,
+            "p95": report.proof_length_distribution.p95,
+        },
+        "tactic_vocabulary": [
+            {"tactic": tf.tactic, "count": tf.count}
+            for tf in report.tactic_vocabulary
+        ],
+        "per_project": [
+            {
+                "project_id": p.project_id,
+                "premise_coverage": p.premise_coverage,
+                "proof_length_distribution": {
+                    "min": p.proof_length_distribution.min,
+                    "max": p.proof_length_distribution.max,
+                    "mean": p.proof_length_distribution.mean,
+                    "median": p.proof_length_distribution.median,
+                    "p25": p.proof_length_distribution.p25,
+                    "p75": p.proof_length_distribution.p75,
+                    "p95": p.proof_length_distribution.p95,
+                },
+                "theorem_count": p.theorem_count,
+            }
+            for p in report.per_project
+        ],
+    }
+    return json.dumps(obj, separators=(",", ":"))
+
+
+def _format_quality_report_human(report) -> str:
+    """Format QualityReport as human-readable text."""
+    d = report.proof_length_distribution
+    lines = [
+        "Quality Report",
+        "==============",
+        f"Premise coverage: {report.premise_coverage * 100:.1f}%",
+        f"Proof length: min={d.min}, max={d.max}, mean={d.mean}, "
+        f"median={d.median}, p25={d.p25}, p75={d.p75}, p95={d.p95}",
+        "",
+        "Top tactics:",
+    ]
+    for tf in report.tactic_vocabulary[:20]:
+        lines.append(f"  {tf.tactic:<12s} {tf.count}")
+    if report.per_project:
+        lines.append("")
+        lines.append("Per-project:")
+        for p in report.per_project:
+            lines.append(
+                f"  {p.project_id}  ({p.theorem_count} theorems, "
+                f"{p.premise_coverage * 100:.1f}% premise coverage)"
+            )
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

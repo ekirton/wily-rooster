@@ -713,3 +713,273 @@ class TestDbOptionRequired:
         cli = _import_cli()
         result = runner.invoke(cli, subcmd)
         assert result.exit_code == 2
+
+
+# ===========================================================================
+# 14. extract subcommand (§4.7)
+# ===========================================================================
+
+
+class TestExtractSubcommand:
+    """extract: batch proof trace extraction from Coq project directories."""
+
+    def test_successful_extraction_exits_0(self, runner, tmp_path):
+        """Given valid project dirs, extract succeeds with exit code 0."""
+        cli = _import_cli()
+        project_dir = tmp_path / "stdlib"
+        project_dir.mkdir()
+        output_path = tmp_path / "output.jsonl"
+        # Contract test: real ExtractionCampaignOrchestrator tested in test_extraction_campaign.py
+        with patch(
+            "wily_rooster.cli.commands.run_campaign",
+        ) as mock_run:
+            from wily_rooster.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=10, total_extracted=10,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "extract", str(project_dir), "--output", str(output_path),
+            ])
+        assert result.exit_code == 0
+
+    def test_missing_project_dir_exits_1(self, runner, tmp_path):
+        """Given a nonexistent project directory, exit code is 1."""
+        cli = _import_cli()
+        result = runner.invoke(cli, [
+            "extract", "/nonexistent/path", "--output", str(tmp_path / "out.jsonl"),
+        ])
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower() or "not found" in (result.stderr or "").lower()
+
+    def test_output_option_required(self, runner, tmp_path):
+        """--output is required; omitting it exits with code 2."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        result = runner.invoke(cli, ["extract", str(project_dir)])
+        assert result.exit_code == 2
+
+    def test_incremental_and_resume_mutually_exclusive(self, runner, tmp_path):
+        """--incremental and --resume cannot be used together."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        result = runner.invoke(cli, [
+            "extract", str(project_dir),
+            "--output", str(tmp_path / "out.jsonl"),
+            "--incremental", "--resume",
+        ])
+        assert result.exit_code == 2
+
+    def test_all_failures_exits_1(self, runner, tmp_path):
+        """When all proofs fail, exit code is 1."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        # Contract test: real orchestrator tested in test_extraction_campaign.py
+        with patch(
+            "wily_rooster.cli.commands.run_campaign",
+        ) as mock_run:
+            from wily_rooster.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=10, total_extracted=0,
+                total_failed=10, total_skipped=0, per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "extract", str(project_dir), "--output", str(tmp_path / "out.jsonl"),
+            ])
+        assert result.exit_code == 1
+
+    def test_partial_failures_exits_0(self, runner, tmp_path):
+        """When some proofs fail but some succeed, exit code is 0 (partial success)."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        # Contract test: real orchestrator tested in test_extraction_campaign.py
+        with patch(
+            "wily_rooster.cli.commands.run_campaign",
+        ) as mock_run:
+            from wily_rooster.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=10, total_extracted=8,
+                total_failed=2, total_skipped=0, per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "extract", str(project_dir), "--output", str(tmp_path / "out.jsonl"),
+            ])
+        assert result.exit_code == 0
+
+    def test_multiple_project_dirs(self, runner, tmp_path):
+        """extract accepts multiple project directories."""
+        cli = _import_cli()
+        dir1 = tmp_path / "stdlib"
+        dir2 = tmp_path / "mathcomp"
+        dir1.mkdir()
+        dir2.mkdir()
+        # Contract test: real orchestrator tested in test_extraction_campaign.py
+        with patch(
+            "wily_rooster.cli.commands.run_campaign",
+        ) as mock_run:
+            from wily_rooster.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=0, total_extracted=0,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "extract", str(dir1), str(dir2),
+                "--output", str(tmp_path / "out.jsonl"),
+            ])
+        assert result.exit_code == 0
+        # Verify both dirs were passed to run_campaign
+        call_args = mock_run.call_args
+        assert str(dir1) in str(call_args) and str(dir2) in str(call_args)
+
+    def test_timeout_option(self, runner, tmp_path):
+        """--timeout sets per-proof timeout."""
+        cli = _import_cli()
+        project_dir = tmp_path / "proj"
+        project_dir.mkdir()
+        # Contract test: real orchestrator tested in test_extraction_campaign.py
+        with patch(
+            "wily_rooster.cli.commands.run_campaign",
+        ) as mock_run:
+            from wily_rooster.extraction.types import ExtractionSummary
+            mock_run.return_value = ExtractionSummary(
+                schema_version=1, record_type="extraction_summary",
+                total_theorems_found=0, total_extracted=0,
+                total_failed=0, total_skipped=0, per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "extract", str(project_dir),
+                "--output", str(tmp_path / "out.jsonl"),
+                "--timeout", "120",
+            ])
+        assert result.exit_code == 0
+
+
+# ===========================================================================
+# 15. extract-deps subcommand (§4.8)
+# ===========================================================================
+
+
+class TestExtractDepsSubcommand:
+    """extract-deps: post-hoc dependency graph extraction."""
+
+    def test_successful_extraction_exits_0(self, runner, tmp_path):
+        cli = _import_cli()
+        input_file = tmp_path / "extraction.jsonl"
+        input_file.write_text("{}\n")
+        output_file = tmp_path / "deps.jsonl"
+        # Contract test: real extract_dependency_graph tested in test_extraction_dependency_graph.py
+        with patch(
+            "wily_rooster.cli.commands.extract_dependency_graph",
+        ):
+            result = runner.invoke(cli, [
+                "extract-deps", str(input_file), "--output", str(output_file),
+            ])
+        assert result.exit_code == 0
+
+    def test_invalid_input_exits_1(self, runner, tmp_path):
+        cli = _import_cli()
+        result = runner.invoke(cli, [
+            "extract-deps", "/nonexistent/file.jsonl",
+            "--output", str(tmp_path / "deps.jsonl"),
+        ])
+        assert result.exit_code == 1
+
+
+# ===========================================================================
+# 16. quality-report subcommand (§4.9)
+# ===========================================================================
+
+
+class TestQualityReportSubcommand:
+    """quality-report: dataset quality report generation."""
+
+    def test_human_readable_output_exits_0(self, runner, tmp_path):
+        cli = _import_cli()
+        input_file = tmp_path / "extraction.jsonl"
+        input_file.write_text("{}\n")
+        # Contract test: real generate_quality_report tested in test_extraction_reporting.py
+        with patch(
+            "wily_rooster.cli.commands.generate_quality_report",
+        ) as mock_report:
+            from wily_rooster.extraction.types import (
+                DistributionStats, QualityReport, TacticFrequency,
+            )
+            mock_report.return_value = QualityReport(
+                premise_coverage=0.87,
+                proof_length_distribution=DistributionStats(
+                    min=1, max=100, mean=12.0, median=8.0,
+                    p25=4.0, p75=16.0, p95=45.0,
+                ),
+                tactic_vocabulary=[TacticFrequency(tactic="apply", count=100)],
+                per_project=[],
+            )
+            result = runner.invoke(cli, ["quality-report", str(input_file)])
+        assert result.exit_code == 0
+        assert "premise coverage" in result.output.lower() or "87" in result.output
+
+    def test_json_output(self, runner, tmp_path):
+        cli = _import_cli()
+        input_file = tmp_path / "extraction.jsonl"
+        input_file.write_text("{}\n")
+        # Contract test: real generate_quality_report tested in test_extraction_reporting.py
+        with patch(
+            "wily_rooster.cli.commands.generate_quality_report",
+        ) as mock_report:
+            from wily_rooster.extraction.types import (
+                DistributionStats, QualityReport, TacticFrequency,
+            )
+            mock_report.return_value = QualityReport(
+                premise_coverage=0.87,
+                proof_length_distribution=DistributionStats(
+                    min=1, max=100, mean=12.0, median=8.0,
+                    p25=4.0, p75=16.0, p95=45.0,
+                ),
+                tactic_vocabulary=[TacticFrequency(tactic="apply", count=100)],
+                per_project=[],
+            )
+            result = runner.invoke(cli, ["quality-report", str(input_file), "--json"])
+        assert result.exit_code == 0
+        parsed = json.loads(result.output)
+        assert "premise_coverage" in parsed
+
+    def test_invalid_input_exits_1(self, runner, tmp_path):
+        cli = _import_cli()
+        result = runner.invoke(cli, [
+            "quality-report", "/nonexistent/file.jsonl",
+        ])
+        assert result.exit_code == 1
+
+    def test_output_to_file(self, runner, tmp_path):
+        cli = _import_cli()
+        input_file = tmp_path / "extraction.jsonl"
+        input_file.write_text("{}\n")
+        output_file = tmp_path / "report.json"
+        # Contract test: real generate_quality_report tested in test_extraction_reporting.py
+        with patch(
+            "wily_rooster.cli.commands.generate_quality_report",
+        ) as mock_report:
+            from wily_rooster.extraction.types import (
+                DistributionStats, QualityReport, TacticFrequency,
+            )
+            mock_report.return_value = QualityReport(
+                premise_coverage=0.87,
+                proof_length_distribution=DistributionStats(
+                    min=1, max=100, mean=12.0, median=8.0,
+                    p25=4.0, p75=16.0, p95=45.0,
+                ),
+                tactic_vocabulary=[TacticFrequency(tactic="apply", count=100)],
+                per_project=[],
+            )
+            result = runner.invoke(cli, [
+                "quality-report", str(input_file),
+                "--output", str(output_file),
+            ])
+        assert result.exit_code == 0

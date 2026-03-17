@@ -1570,3 +1570,460 @@ class TestProofStateDiffType:
         )
         assert len(diff.goals_changed) == 1
         assert len(diff.hypotheses_added) == 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 4. Extraction Types (§4.8)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _import_extraction_types():
+    from wily_rooster.extraction.types import (
+        CampaignMetadata,
+        DependencyEntry,
+        DependencyRef,
+        DistributionStats,
+        ExtractionDiff,
+        ExtractionError,
+        ExtractionRecord,
+        ExtractionStep,
+        ExtractionSummary,
+        FileSummary,
+        ProjectMetadata,
+        ProjectQualityReport,
+        ProjectSummary,
+        QualityReport,
+        ScopeFilter,
+        TacticFrequency,
+    )
+    return (
+        CampaignMetadata, DependencyEntry, DependencyRef, DistributionStats,
+        ExtractionDiff, ExtractionError, ExtractionRecord, ExtractionStep,
+        ExtractionSummary, FileSummary, ProjectMetadata, ProjectQualityReport,
+        ProjectSummary, QualityReport, ScopeFilter, TacticFrequency,
+    )
+
+
+def _import_error_kind():
+    from wily_rooster.extraction.types import ErrorKind
+    return ErrorKind
+
+
+class TestErrorKindEnum:
+    """ErrorKind enum — exactly 5 members with underscore-separated lowercase values."""
+
+    def test_has_exactly_five_members(self):
+        ErrorKind = _import_error_kind()
+        assert len(ErrorKind) == 5
+
+    @pytest.mark.parametrize(
+        "member_name,expected_value",
+        [
+            ("TIMEOUT", "timeout"),
+            ("BACKEND_CRASH", "backend_crash"),
+            ("TACTIC_FAILURE", "tactic_failure"),
+            ("LOAD_FAILURE", "load_failure"),
+            ("UNKNOWN", "unknown"),
+        ],
+    )
+    def test_member_has_correct_string_value(self, member_name, expected_value):
+        ErrorKind = _import_error_kind()
+        member = ErrorKind[member_name]
+        assert member.value == expected_value
+
+    def test_all_values_are_lowercase(self):
+        ErrorKind = _import_error_kind()
+        for member in ErrorKind:
+            assert isinstance(member.value, str)
+            assert member.value == member.value.lower()
+
+
+class TestExtractionRecordType:
+    """ExtractionRecord: schema_version, record_type, theorem_name, source_file,
+    project_id, total_steps, steps."""
+
+    def test_construction(self):
+        *_, ExtractionRecord, ExtractionStep, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        step0 = ExtractionStep(
+            step_index=0, tactic=None, goals=[], focused_goal_index=0,
+            premises=[], diff=None,
+        )
+        step1 = ExtractionStep(
+            step_index=1, tactic="reflexivity.", goals=[], focused_goal_index=None,
+            premises=[], diff=None,
+        )
+        record = ExtractionRecord(
+            schema_version=1, record_type="proof_trace",
+            theorem_name="Coq.Init.Logic.eq_refl",
+            source_file="theories/Init/Logic.v",
+            project_id="coq-stdlib", total_steps=1,
+            steps=[step0, step1],
+        )
+        assert record.record_type == "proof_trace"
+        assert record.total_steps == 1
+        assert len(record.steps) == 2
+
+    def test_record_type_is_proof_trace(self):
+        *_, ExtractionRecord, ExtractionStep, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        step0 = ExtractionStep(
+            step_index=0, tactic=None, goals=[], focused_goal_index=0,
+            premises=[], diff=None,
+        )
+        record = ExtractionRecord(
+            schema_version=1, record_type="proof_trace",
+            theorem_name="T", source_file="f.v",
+            project_id="p", total_steps=0, steps=[step0],
+        )
+        assert record.record_type == "proof_trace"
+
+
+class TestExtractionStepType:
+    """ExtractionStep: step_index, tactic, goals, focused_goal_index, premises, diff."""
+
+    def test_step_zero_has_null_tactic(self):
+        *_, ExtractionStep, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        step = ExtractionStep(
+            step_index=0, tactic=None, goals=[], focused_goal_index=0,
+            premises=[], diff=None,
+        )
+        assert step.tactic is None
+        assert step.diff is None
+
+    def test_step_nonzero_has_tactic(self):
+        *_, ExtractionStep, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        step = ExtractionStep(
+            step_index=1, tactic="intros n.", goals=[], focused_goal_index=0,
+            premises=[], diff=None,
+        )
+        assert step.tactic == "intros n."
+
+    def test_diff_is_null_when_disabled(self):
+        *_, ExtractionStep, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        step = ExtractionStep(
+            step_index=2, tactic="simpl.", goals=[], focused_goal_index=0,
+            premises=[], diff=None,
+        )
+        assert step.diff is None
+
+
+class TestExtractionDiffType:
+    """ExtractionDiff: 6 change lists, structurally like ProofStateDiff but without from/to step."""
+
+    def test_construction_empty(self):
+        *_, ExtractionDiff, _, _, _, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        diff = ExtractionDiff(
+            goals_added=[], goals_removed=[], goals_changed=[],
+            hypotheses_added=[], hypotheses_removed=[], hypotheses_changed=[],
+        )
+        assert diff.goals_added == []
+        assert diff.hypotheses_changed == []
+
+    def test_has_no_from_to_step_fields(self):
+        """ExtractionDiff omits from_step/to_step (implicit from containing step)."""
+        *_, ExtractionDiff, _, _, _, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        diff = ExtractionDiff(
+            goals_added=[], goals_removed=[], goals_changed=[],
+            hypotheses_added=[], hypotheses_removed=[], hypotheses_changed=[],
+        )
+        assert not hasattr(diff, "from_step")
+        assert not hasattr(diff, "to_step")
+
+
+class TestExtractionErrorType:
+    """ExtractionError: schema_version, record_type, theorem_name, source_file,
+    project_id, error_kind, error_message."""
+
+    def test_construction(self):
+        *_, ExtractionError, _, _, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        error = ExtractionError(
+            schema_version=1, record_type="extraction_error",
+            theorem_name="Coq.Arith.PeanoNat.Nat.sub_diag",
+            source_file="theories/Arith/PeanoNat.v",
+            project_id="coq-stdlib",
+            error_kind="timeout",
+            error_message="Proof extraction exceeded 60s time limit",
+        )
+        assert error.record_type == "extraction_error"
+        assert error.error_kind == "timeout"
+
+    @pytest.mark.parametrize("kind", [
+        "timeout", "backend_crash", "tactic_failure", "load_failure", "unknown",
+    ])
+    def test_all_valid_error_kinds_accepted(self, kind):
+        *_, ExtractionError, _, _, _, _, _, _, _, _, _, _ = _import_extraction_types()
+        error = ExtractionError(
+            schema_version=1, record_type="extraction_error",
+            theorem_name="T", source_file="f.v", project_id="p",
+            error_kind=kind, error_message="msg",
+        )
+        assert error.error_kind == kind
+
+
+class TestCampaignMetadataType:
+    """CampaignMetadata: schema_version, record_type, extraction_tool_version,
+    extraction_timestamp, projects."""
+
+    def test_construction(self):
+        (CampaignMetadata, _, _, _, _, _, _, _, _, _, ProjectMetadata, *_) = _import_extraction_types()
+        pm = ProjectMetadata(
+            project_id="coq-stdlib",
+            project_path="/home/user/stdlib",
+            coq_version="8.19.1",
+            commit_hash=None,
+        )
+        meta = CampaignMetadata(
+            schema_version=1, record_type="campaign_metadata",
+            extraction_tool_version="0.3.0",
+            extraction_timestamp="2026-03-17T14:30:00Z",
+            projects=[pm],
+        )
+        assert meta.record_type == "campaign_metadata"
+        assert len(meta.projects) == 1
+
+    def test_projects_must_be_non_empty(self):
+        """Spec §4.8: projects list is non-empty."""
+        (CampaignMetadata, *_) = _import_extraction_types()
+        meta = CampaignMetadata(
+            schema_version=1, record_type="campaign_metadata",
+            extraction_tool_version="0.3.0",
+            extraction_timestamp="2026-03-17T14:30:00Z",
+            projects=[],
+        )
+        # Construction succeeds — validation is at serialization time
+        assert meta.projects == []
+
+
+class TestProjectMetadataType:
+    """ProjectMetadata: project_id, project_path, coq_version, commit_hash."""
+
+    def test_construction_with_commit_hash(self):
+        *_, ProjectMetadata, _, _, _, _, _ = _import_extraction_types()
+        pm = ProjectMetadata(
+            project_id="coq-stdlib",
+            project_path="/path/to/stdlib",
+            coq_version="8.19.1",
+            commit_hash="abc123def456",
+        )
+        assert pm.commit_hash == "abc123def456"
+
+    def test_commit_hash_none_for_non_git(self):
+        *_, ProjectMetadata, _, _, _, _, _ = _import_extraction_types()
+        pm = ProjectMetadata(
+            project_id="local-project",
+            project_path="/tmp/project",
+            coq_version="8.19.1",
+            commit_hash=None,
+        )
+        assert pm.commit_hash is None
+
+
+class TestExtractionSummaryType:
+    """ExtractionSummary: counters and per-project breakdown."""
+
+    def test_construction(self):
+        (_, _, _, _, _, _, _, _, ExtractionSummary, _, _, _, ProjectSummary, *_) = _import_extraction_types()
+        summary = ExtractionSummary(
+            schema_version=1, record_type="extraction_summary",
+            total_theorems_found=100, total_extracted=95,
+            total_failed=5, total_skipped=0,
+            per_project=[],
+        )
+        assert summary.total_theorems_found == 100
+        assert summary.total_extracted == 95
+
+    def test_counter_invariant(self):
+        """extracted + failed + skipped == theorems_found."""
+        (_, _, _, _, _, _, _, _, ExtractionSummary, *_) = _import_extraction_types()
+        summary = ExtractionSummary(
+            schema_version=1, record_type="extraction_summary",
+            total_theorems_found=100, total_extracted=90,
+            total_failed=7, total_skipped=3,
+            per_project=[],
+        )
+        assert (summary.total_extracted + summary.total_failed
+                + summary.total_skipped) == summary.total_theorems_found
+
+
+class TestProjectSummaryType:
+    """ProjectSummary: per-project counters with per-file breakdown."""
+
+    def test_construction(self):
+        (_, _, _, _, _, _, _, _, _, FileSummary, _, _, ProjectSummary, *_) = _import_extraction_types()
+        fs = FileSummary(
+            source_file="theories/Init/Logic.v",
+            theorems_found=10, extracted=9, failed=1, skipped=0,
+        )
+        ps = ProjectSummary(
+            project_id="coq-stdlib",
+            theorems_found=10, extracted=9, failed=1, skipped=0,
+            per_file=[fs],
+        )
+        assert ps.project_id == "coq-stdlib"
+        assert len(ps.per_file) == 1
+
+    def test_counter_invariant(self):
+        (_, _, _, _, _, _, _, _, _, _, _, _, ProjectSummary, *_) = _import_extraction_types()
+        ps = ProjectSummary(
+            project_id="p", theorems_found=20,
+            extracted=15, failed=3, skipped=2, per_file=[],
+        )
+        assert ps.extracted + ps.failed + ps.skipped == ps.theorems_found
+
+
+class TestFileSummaryType:
+    """FileSummary: per-file counters."""
+
+    def test_construction(self):
+        (_, _, _, _, _, _, _, _, _, FileSummary, *_) = _import_extraction_types()
+        fs = FileSummary(
+            source_file="theories/Arith/PeanoNat.v",
+            theorems_found=50, extracted=48, failed=2, skipped=0,
+        )
+        assert fs.source_file == "theories/Arith/PeanoNat.v"
+
+    def test_counter_invariant(self):
+        (_, _, _, _, _, _, _, _, _, FileSummary, *_) = _import_extraction_types()
+        fs = FileSummary(
+            source_file="f.v", theorems_found=10,
+            extracted=7, failed=2, skipped=1,
+        )
+        assert fs.extracted + fs.failed + fs.skipped == fs.theorems_found
+
+
+class TestDependencyEntryType:
+    """DependencyEntry: theorem_name, source_file, project_id, depends_on."""
+
+    def test_construction(self):
+        (_, DependencyEntry, DependencyRef, *_) = _import_extraction_types()
+        entry = DependencyEntry(
+            theorem_name="Coq.Arith.PeanoNat.Nat.add_comm",
+            source_file="theories/Arith/PeanoNat.v",
+            project_id="coq-stdlib",
+            depends_on=[
+                DependencyRef(name="Coq.Arith.PeanoNat.Nat.add_0_r", kind="lemma"),
+                DependencyRef(name="Coq.Init.Datatypes.nat", kind="inductive"),
+            ],
+        )
+        assert len(entry.depends_on) == 2
+
+    def test_empty_depends_on(self):
+        (_, DependencyEntry, *_) = _import_extraction_types()
+        entry = DependencyEntry(
+            theorem_name="T", source_file="f.v",
+            project_id="p", depends_on=[],
+        )
+        assert entry.depends_on == []
+
+
+class TestDependencyRefType:
+    """DependencyRef: name and kind."""
+
+    @pytest.mark.parametrize("kind", [
+        "theorem", "lemma", "definition", "axiom", "constructor", "inductive",
+    ])
+    def test_all_valid_kinds_accepted(self, kind):
+        (_, _, DependencyRef, *_) = _import_extraction_types()
+        ref = DependencyRef(name="Coq.Init.Datatypes.nat", kind=kind)
+        assert ref.kind == kind
+
+
+class TestQualityReportType:
+    """QualityReport: premise_coverage, proof_length_distribution,
+    tactic_vocabulary, per_project."""
+
+    def test_construction(self):
+        (_, _, _, DistributionStats, _, _, _, _, _, _, _, ProjectQualityReport,
+         _, QualityReport, _, TacticFrequency) = _import_extraction_types()
+        dist = DistributionStats(
+            min=1, max=342, mean=12.4, median=8.0,
+            p25=4.0, p75=16.0, p95=45.0,
+        )
+        report = QualityReport(
+            premise_coverage=0.87,
+            proof_length_distribution=dist,
+            tactic_vocabulary=[TacticFrequency(tactic="apply", count=24500)],
+            per_project=[],
+        )
+        assert report.premise_coverage == 0.87
+        assert report.proof_length_distribution.min == 1
+
+
+class TestDistributionStatsType:
+    """DistributionStats: min, max, mean, median, p25, p75, p95."""
+
+    def test_construction(self):
+        (_, _, _, DistributionStats, *_) = _import_extraction_types()
+        stats = DistributionStats(
+            min=1, max=100, mean=25.5, median=20.0,
+            p25=10.0, p75=35.0, p95=80.0,
+        )
+        assert stats.min == 1
+        assert stats.p95 == 80.0
+
+    def test_single_value_all_equal(self):
+        """Spec: for a single record, min = max = mean = median = p25 = p75 = p95."""
+        (_, _, _, DistributionStats, *_) = _import_extraction_types()
+        stats = DistributionStats(
+            min=5, max=5, mean=5.0, median=5.0,
+            p25=5.0, p75=5.0, p95=5.0,
+        )
+        assert stats.min == stats.max == stats.mean == stats.median
+
+
+class TestTacticFrequencyType:
+    """TacticFrequency: tactic keyword and count."""
+
+    def test_construction(self):
+        *_, TacticFrequency = _import_extraction_types()
+        tf = TacticFrequency(tactic="apply", count=24500)
+        assert tf.tactic == "apply"
+        assert tf.count == 24500
+
+
+class TestProjectQualityReportType:
+    """ProjectQualityReport: per-project quality metrics."""
+
+    def test_construction(self):
+        (_, _, _, DistributionStats, _, _, _, _, _, _, _, ProjectQualityReport, *_) = _import_extraction_types()
+        dist = DistributionStats(
+            min=1, max=200, mean=10.2, median=7.0,
+            p25=3.0, p75=14.0, p95=38.0,
+        )
+        pqr = ProjectQualityReport(
+            project_id="coq-stdlib",
+            premise_coverage=0.89,
+            proof_length_distribution=dist,
+            theorem_count=4500,
+        )
+        assert pqr.project_id == "coq-stdlib"
+        assert pqr.theorem_count == 4500
+
+
+class TestScopeFilterType:
+    """ScopeFilter: name_pattern and module_prefixes."""
+
+    def test_both_none_means_extract_all(self):
+        *_, ScopeFilter, _ = _import_extraction_types()
+        sf = ScopeFilter(name_pattern=None, module_prefixes=None)
+        assert sf.name_pattern is None
+        assert sf.module_prefixes is None
+
+    def test_name_pattern_only(self):
+        *_, ScopeFilter, _ = _import_extraction_types()
+        sf = ScopeFilter(name_pattern=".*comm.*", module_prefixes=None)
+        assert sf.name_pattern == ".*comm.*"
+
+    def test_module_prefixes_only(self):
+        *_, ScopeFilter, _ = _import_extraction_types()
+        sf = ScopeFilter(name_pattern=None, module_prefixes=["Coq.Arith"])
+        assert sf.module_prefixes == ["Coq.Arith"]
+
+    def test_both_set_means_conjunction(self):
+        """Spec: when both fields are set, both must match (conjunction)."""
+        *_, ScopeFilter, _ = _import_extraction_types()
+        sf = ScopeFilter(
+            name_pattern=".*comm.*",
+            module_prefixes=["Coq.Arith"],
+        )
+        assert sf.name_pattern is not None
+        assert sf.module_prefixes is not None

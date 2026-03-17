@@ -198,21 +198,24 @@ def process_declaration(
     if storage_kind is None:
         return None
 
-    # Normalization pipeline — failures produce partial results
+    # Normalization pipeline — failures produce partial results.
+    # When constr_t is a metadata dict (e.g., coq-lsp Search output),
+    # skip normalization — there is no kernel term to normalize.
     tree = None
     symbol_set: list[str] = []
     wl_vector: dict[str, int] = {}
 
-    try:
-        tree = coq_normalize(constr_t)
-        cse_normalize(tree)
-        symbol_set = list(extract_consts(tree))
-        wl_vector = wl_histogram(tree, h=3)
-    except Exception:
-        logger.warning(
-            "Normalization failed for %s, storing partial result", name,
-            exc_info=True,
-        )
+    if not isinstance(constr_t, dict):
+        try:
+            tree = coq_normalize(constr_t)
+            cse_normalize(tree)
+            symbol_set = list(extract_consts(tree))
+            wl_vector = wl_histogram(tree, h=3)
+        except Exception:
+            logger.warning(
+                "Normalization failed for %s, storing partial result", name,
+                exc_info=True,
+            )
 
     # Type expression: prefer constr_t["type_signature"] from Search output
     type_expr = None
@@ -370,6 +373,16 @@ def run_extraction(
             # Backend crash — clean up and re-raise
             _cleanup_db(db_path)
             raise
+
+        # Deduplicate declarations by name (keep first occurrence).
+        # The same name can appear in multiple .vo files via re-exports.
+        seen_names: set[str] = set()
+        unique_declarations: list[tuple[str, str, Any, Path]] = []
+        for decl in all_declarations:
+            if decl[0] not in seen_names:
+                seen_names.add(decl[0])
+                unique_declarations.append(decl)
+        all_declarations = unique_declarations
 
         total_decls = len(all_declarations)
 

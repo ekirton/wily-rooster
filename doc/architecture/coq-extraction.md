@@ -16,11 +16,15 @@ Offline extraction of declarations from compiled Coq/Rocq libraries into the sea
 coq-lsp or SerAPI
   │  List declarations: (name, type_sig) per module
   │  Detect kind per declaration (backend-dependent; may require additional queries)
-  │  Read each declaration's Constr.t kernel term
+  │  Read each declaration's Constr.t kernel term (when available; backend-dependent)
+  │
+  ▼
+Deduplicate declarations by fully qualified name (keep first occurrence)
   │
   ▼
 Per-declaration processing:
   1. Parse Constr.t            → ConstrNode (with pre-resolved FQNs)
+     (steps 1–5 skipped when kernel term is unavailable — partial result stored)
   2. coq_normalize(constr_node)→ normalized ExprTree (constr_to_tree + recompute_depths + assign_node_ids)
   3. cse_normalize(tree)       → CSE-reduced tree (recomputes depths + node_ids after)
   4. extract_symbols(tree)     → symbol set {constants, inductives, constructors}
@@ -90,9 +94,12 @@ The `constr_tree` BLOB format is defined in [storage.md](storage.md). See the st
 
 ## Extraction Tooling
 
-Declarations are read from compiled `.vo` files via coq-lsp or SerAPI. Both tools provide access to `Constr.t` kernel terms, which are the input to the normalization pipeline. The choice between them is an implementation decision — both produce equivalent kernel terms.
+Declarations are read from compiled `.vo` files via coq-lsp or SerAPI. Both tools can access `Constr.t` kernel terms, which are the input to the normalization pipeline. However, kernel term availability depends on the backend's extraction path:
 
-The backends differ in how they expose declaration metadata. SerAPI provides kind information directly. coq-lsp requires a separate round-trip per declaration for kind detection, adding O(N) backend queries to the extraction pipeline. For large targets (stdlib+mathcomp, ~10,000+ declarations), this overhead increases extraction time from minutes to 30+ minutes.
+- **SerAPI**: Returns `Constr.t` kernel terms directly (via `Print` S-expressions). All normalization pipeline steps produce complete results.
+- **coq-lsp**: The `Search _ inside M.` command returns textual `name : type_signature` pairs without kernel terms. Declarations indexed via this path have metadata (name, kind, statement, type signature, dependencies) but no structural data (no tree, no symbol set, no WL vectors). Structural and symbol-based search channels do not match these declarations; name-based and full-text search still work.
+
+The backends also differ in how they expose declaration metadata. SerAPI provides kind information directly. coq-lsp requires a separate round-trip per declaration for kind detection, adding O(N) backend queries to the extraction pipeline. For large targets (stdlib+mathcomp, ~10,000+ declarations), this overhead increases extraction time from minutes to 30+ minutes.
 
 Key requirement: the extraction tool must be version-compatible with the installed Coq/Rocq version. The extracted library version is recorded in `index_meta` for stale detection.
 
@@ -115,9 +122,10 @@ Both extraction passes report progress at per-declaration granularity, and each 
 The indexing command:
 1. Deletes any existing database file at the output path
 2. Detects the installed Coq/Rocq version and target library versions
-3. Extracts all declarations through the pipeline above
-4. Computes global symbol frequencies across all declarations
-5. Writes everything to a single SQLite database
-6. Records the index schema version and library versions in `index_meta`
+3. Collects declarations from all `.vo` files, then deduplicates by fully qualified name (keeps first occurrence; duplicates arise from module re-exports across `.vo` files)
+4. Processes each unique declaration through the pipeline above
+5. Computes global symbol frequencies across all declarations
+6. Writes everything to a single SQLite database
+7. Records the index schema version and library versions in `index_meta`
 
 The entire process runs without GPU, network access, or external API keys.

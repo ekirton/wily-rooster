@@ -34,7 +34,7 @@ The system shall define a `Backend` protocol with operations:
 #### list_declarations(vo_path)
 
 - REQUIRES: `vo_path` is a path to a compiled `.vo` file.
-- ENSURES: Returns a list of `(name, kind, constr_t)` tuples for all declarations in the file.
+- ENSURES: Returns a list of `(name, kind, constr_t)` tuples for all declarations in the file. The `constr_t` value is backend-dependent: backends that provide kernel terms return a `ConstrNode`; backends that provide only metadata (e.g., coq-lsp Search output) return a dict containing at minimum `{"type_signature": str, "source": str}`.
 - MAINTAINS: The `kind` value for each declaration is determined by the kind detection mechanism (§4.1.1).
 
 #### 4.1.1 Kind Detection
@@ -130,7 +130,7 @@ The `module` field on each declaration shall be the logical path of the `.vo` fi
 
 For each declaration extracted from a `.vo` file:
 
-1. Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs)
+1. When `constr_t` contains kernel term data (i.e., is not a metadata dict): Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs). When `constr_t` is metadata-only (a dict without kernel term data), skip steps 1–5 and store a partial result with no tree, empty symbol set, and empty WL vector.
 2. `coq_normalize(constr_node)` → normalized `ExprTree`
 3. `cse_normalize(tree)` → CSE-reduced tree (recomputes depths, node_ids, node_count)
 4. `extract_consts(tree)` → symbol set
@@ -141,6 +141,8 @@ For each declaration extracted from a `.vo` file:
 The declaration row, WL vector, and declaration data are co-inserted in the same batch transaction (batch size: 1000 declarations).
 
 **Individual declaration failure**: When normalization or extraction fails for a single declaration, log the declaration name and error, then continue to the next declaration. The index is usable with partial coverage.
+
+**Declaration deduplication**: When multiple `.vo` files contain the same fully qualified declaration name (e.g., via module re-exports), the pipeline shall keep the first occurrence and skip subsequent duplicates. Duplicates are detected after collection and before Pass 1 processing.
 
 ### 4.5 Pass 2 — Dependency Resolution
 

@@ -1304,3 +1304,184 @@ class TestPrefetchedData:
         assert result.dependency_names == [("X", "assumes")]
         backend.pretty_print.assert_called_once()
         backend.get_dependencies.assert_called_once()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 14. Metadata-Only constr_t (coq-lsp backend — §4.4 step 1)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestMetadataOnlyConstrT:
+    """When constr_t is a metadata dict (coq-lsp backend), normalization is
+    skipped and a partial result is stored without error (§4.4 step 1)."""
+
+    def test_dict_constr_t_skips_normalization_without_error(self, caplog):
+        """A dict constr_t produces a valid result with tree=None and no
+        normalization error in the log."""
+        import logging
+        from wily_rooster.extraction.pipeline import process_declaration
+
+        backend = _make_mock_backend()
+        constr_t = {
+            "name": "Nat.add",
+            "type_signature": "nat -> nat -> nat",
+            "source": "coq-lsp",
+        }
+
+        with caplog.at_level(logging.WARNING):
+            result = process_declaration(
+                "Nat.add", "Definition", constr_t, backend, "/fake/Nat.vo",
+                statement="Nat.add = ...", dependency_names=[],
+            )
+
+        assert result is not None
+        assert result.tree is None
+        assert result.symbol_set == []
+        assert result.wl_vector == {}
+        # No normalization warning should be logged for metadata-only constr_t
+        normalization_warnings = [
+            r for r in caplog.records
+            if "Normalization failed" in r.message
+        ]
+        assert normalization_warnings == []
+
+    def test_dict_constr_t_preserves_type_signature(self):
+        """type_expr is extracted from the dict's type_signature field."""
+        from wily_rooster.extraction.pipeline import process_declaration
+
+        backend = _make_mock_backend()
+        constr_t = {
+            "name": "Nat.mul",
+            "type_signature": "nat -> nat -> nat",
+            "source": "coq-lsp",
+        }
+
+        result = process_declaration(
+            "Nat.mul", "Definition", constr_t, backend, "/fake/Nat.vo",
+            statement="Nat.mul = ...", dependency_names=[],
+        )
+
+        assert result is not None
+        assert result.type_expr == "nat -> nat -> nat"
+
+    def test_constr_node_constr_t_still_normalizes(self):
+        """When constr_t is a ConstrNode, normalization proceeds normally."""
+        from wily_rooster.extraction.pipeline import process_declaration
+        from wily_rooster.normalization.constr_node import Const
+
+        backend = _make_mock_backend()
+        constr_t = Const(fqn="Coq.Init.Nat.add")
+
+        result = process_declaration(
+            "Nat.add", "Definition", constr_t, backend, "/fake/Nat.vo",
+            statement="Nat.add = ...", dependency_names=[],
+        )
+
+        assert result is not None
+        assert result.tree is not None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 15. Declaration Deduplication Across .vo Files (§4.4)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDeclarationDeduplication:
+    """When the same declaration name appears in multiple .vo files, the
+    pipeline keeps the first occurrence and skips duplicates (§4.4)."""
+
+    def test_duplicate_names_across_vo_files_keeps_first(self, tmp_path):
+        """Same name from two .vo files → only one process_declaration call."""
+        from wily_rooster.extraction.pipeline import run_extraction
+
+        # Two .vo files both contain "Coq.Init.Nat.add"
+        backend = _make_mock_backend()
+        backend.list_declarations.side_effect = [
+            [("Coq.Init.Nat.add", "Definition", {"mock": "constr1"})],
+            [("Coq.Init.Nat.add", "Definition", {"mock": "constr2"})],
+        ]
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {"Coq.Init.Nat.add": 1}
+
+        result_mock = Mock()
+        result_mock.name = "Coq.Init.Nat.add"
+        result_mock.kind = "definition"
+        result_mock.symbol_set = []
+        result_mock.dependency_names = []
+
+        db_path = tmp_path / "index.db"
+
+        with (
+            patch(
+                "wily_rooster.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/Nat.vo"), Path("/fake/Nat2.vo")],
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.process_declaration",
+                return_value=result_mock,
+            ) as mock_process,
+        ):
+            run_extraction(targets=["stdlib"], db_path=db_path)
+
+        # process_declaration should be called exactly once (duplicate skipped)
+        assert mock_process.call_count == 1
+
+    def test_unique_names_across_vo_files_all_processed(self, tmp_path):
+        """Different names from multiple .vo files → all processed."""
+        from wily_rooster.extraction.pipeline import run_extraction
+
+        backend = _make_mock_backend()
+        backend.list_declarations.side_effect = [
+            [("Coq.Init.Nat.add", "Definition", {"mock": "constr1"})],
+            [("Coq.Init.Nat.mul", "Definition", {"mock": "constr2"})],
+        ]
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {
+            "Coq.Init.Nat.add": 1,
+            "Coq.Init.Nat.mul": 2,
+        }
+
+        result_add = Mock()
+        result_add.name = "Coq.Init.Nat.add"
+        result_add.kind = "definition"
+        result_add.symbol_set = []
+        result_add.dependency_names = []
+
+        result_mul = Mock()
+        result_mul.name = "Coq.Init.Nat.mul"
+        result_mul.kind = "definition"
+        result_mul.symbol_set = []
+        result_mul.dependency_names = []
+
+        db_path = tmp_path / "index.db"
+
+        with (
+            patch(
+                "wily_rooster.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/Nat.vo"), Path("/fake/Nat2.vo")],
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "wily_rooster.extraction.pipeline.process_declaration",
+                side_effect=[result_add, result_mul],
+            ) as mock_process,
+        ):
+            run_extraction(targets=["stdlib"], db_path=db_path)
+
+        # Both unique declarations should be processed
+        assert mock_process.call_count == 2

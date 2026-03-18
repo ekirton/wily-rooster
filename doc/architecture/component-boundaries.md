@@ -31,6 +31,7 @@ System-level view of all components, their boundaries, and the dependency graph.
 | Build System Integration | Build system detection, project file generation, build execution, package/dependency management via coq_makefile/dune/opam | [build-system-integration.md](build-system-integration.md) |
 | Notation Inspection | Notation lookup, scope inspection, precedence/associativity extraction, ambiguity resolution | [notation-inspection.md](notation-inspection.md) |
 | Tactic Documentation | Tactic lookup, comparison, contextual suggestion, hint database inspection | [tactic-documentation.md](tactic-documentation.md) |
+| Nightly Re-index Automation | Upstream version detection, per-library re-extraction, release publication, cron-friendly host launcher | [nightly-reindex.md](nightly-reindex.md) |
 | Claude Code / LLM | Intent interpretation, query formulation, result filtering, explanation | External (not owned by this project) |
 
 ### Cross-Cutting Concerns
@@ -351,3 +352,4 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | [build-system-integration.md](build-system-integration.md) | [specification/build-system-integration.md](../../specification/build-system-integration.md) |
 | [notation-inspection.md](notation-inspection.md) | [specification/notation-inspection.md](../../specification/notation-inspection.md) |
 | [tactic-documentation.md](tactic-documentation.md) | [specification/tactic-documentation.md](../../specification/tactic-documentation.md) |
+| [nightly-reindex.md](nightly-reindex.md) | [specification/nightly-reindex.md](../../specification/nightly-reindex.md) |

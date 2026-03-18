@@ -209,7 +209,7 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 ### Signature
 
 ```
-./scripts/publish-release.sh index-stdlib.db index-mathcomp.db ... [--model <MODEL_PATH>]
+./scripts/publish-release.sh index-stdlib.db index-mathcomp.db ... [--model <MODEL_PATH>] [--replace]
 ```
 
 ### Prerequisites
@@ -227,7 +227,7 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 3. Compute SHA-256 checksums of all assets.
 4. Generate `manifest.json` with per-library entries. Each library entry contains `version` (from `library_version`), `sha256`, `asset_name` (`index-{library}.db`), and `declarations` (from `declarations` metadata key).
 5. Construct release tag: `index-v{schema_version}-coq{coq_version}`.
-6. If tag already exists: abort with error.
+6. If tag already exists and `--replace` is not set: abort with error. If `--replace` is set: delete the existing release via `gh release delete <tag> --yes`, delete the tag via `git push origin :refs/tags/<tag>`, then continue to step 7.
 7. Create GitHub Release via `gh release create` with all per-library assets + manifest + optional model.
 
 ## 6. Error Specification
@@ -260,7 +260,9 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 | Missing metadata in `index_meta` | 1 | `Error: could not read version metadata from index_meta table in {path}.` |
 | Schema version mismatch across DBs | 1 | `Error: schema version mismatch: {path1} has {v1}, {path2} has {v2}.` |
 | Coq version mismatch across DBs | 1 | `Error: Coq version mismatch: {path1} has {v1}, {path2} has {v2}.` |
-| Release tag already exists | 1 | `Error: Release {tag} already exists. Delete it first or use a different version.` |
+| Release tag already exists (without `--replace`) | 1 | `Error: Release {tag} already exists. Delete it first or use a different version.` |
+| `--replace` set, `gh release delete` fails | 1 | `Error: Failed to delete existing release {tag}.` |
+| `--replace` set, tag deletion fails | 1 | `Error: Failed to delete tag {tag}.` |
 
 ## 7. Non-Functional Requirements
 

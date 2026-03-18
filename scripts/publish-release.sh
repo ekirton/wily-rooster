@@ -12,7 +12,7 @@
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 DB_PATH [DB_PATH ...] [--model MODEL_PATH]"
+    echo "Usage: $0 DB_PATH [DB_PATH ...] [--model MODEL_PATH] [--replace]"
     echo
     echo "Publish per-library prebuilt index databases as a GitHub Release."
     echo
@@ -21,6 +21,7 @@ usage() {
     echo
     echo "Options:"
     echo "  --model MODEL_PATH   Also upload an ONNX model file"
+    echo "  --replace            Replace existing release if tag already exists"
     exit 1
 }
 
@@ -28,6 +29,7 @@ usage() {
 
 DB_PATHS=()
 MODEL_PATH=""
+REPLACE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             fi
             MODEL_PATH="$2"
             shift 2
+            ;;
+        --replace)
+            REPLACE=true
+            shift
             ;;
         --help|-h)
             usage
@@ -206,9 +212,23 @@ echo "Release tag: $tag"
 
 # Check if tag already exists
 if gh release view "$tag" &>/dev/null; then
-    echo "Error: Release ${tag} already exists. Delete it first or use a different version."
-    rm -f "$manifest_tmp"
-    exit 1
+    if [[ "$REPLACE" == true ]]; then
+        echo "Replacing existing release ${tag}..."
+        if ! gh release delete "$tag" --yes 2>/dev/null; then
+            echo "Error: Failed to delete existing release ${tag}." >&2
+            rm -f "$manifest_tmp"
+            exit 1
+        fi
+        if ! git push origin ":refs/tags/${tag}" 2>/dev/null; then
+            echo "Error: Failed to delete tag ${tag}." >&2
+            rm -f "$manifest_tmp"
+            exit 1
+        fi
+    else
+        echo "Error: Release ${tag} already exists. Delete it first or use a different version."
+        rm -f "$manifest_tmp"
+        exit 1
+    fi
 fi
 
 # --- Create release ---

@@ -36,6 +36,8 @@ Do not push to a remote branch after every commit. Push only when the branch is 
 
 If the branch is out of date with `main`, rebase before pushing: `git rebase origin/main`.
 
+Always create new branches from an up-to-date `main`: `git checkout main && git pull origin main && git checkout -b <new-branch>`. Never branch from a feature branch — this causes "out of date with base branch" errors on GitHub when the parent branch merges first.
+
 # Diagram Visualization
 
 When a user asks to visualize proofs, dependencies, or proof states, use the `visualize_*` MCP tools (`visualize_proof_state`, `visualize_proof_tree`, `visualize_dependencies`, `visualize_proof_sequence`). These tools write a `proof-diagram.html` file to the project directory as a side effect. After calling a visualization tool, tell the user to open `proof-diagram.html` in their browser.

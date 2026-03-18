@@ -57,7 +57,7 @@ The pipeline shall define a `CoqParser` protocol (interface):
 - ENSURES: Returns a `ConstrNode` (the intermediate representation with pre-resolved FQNs).
 - On failure: raises `ParseError`.
 
-The parser is started lazily on the first structural or type query and kept alive for the server's lifetime.
+The default `CoqParser` implementation is `TypeExprParser` (pure Python, no subprocess). It is instantiated lazily on the first structural or type query and kept alive for the server's lifetime. See [type-expr-parser.md](type-expr-parser.md) for the parser specification.
 
 ### 4.3 search_by_structure
 

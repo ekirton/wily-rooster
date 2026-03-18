@@ -62,12 +62,21 @@ def search_by_symbols(ctx: Any, symbols: list[str], limit: int) -> list[Any]:
     return results[:limit]
 
 
+def _ensure_parser(ctx: Any) -> None:
+    """Lazily initialize the Coq parser on first use."""
+    if ctx.parser is not None:
+        return
+    from poule.parsing.type_expr_parser import TypeExprParser
+    ctx.parser = TypeExprParser()
+
+
 def search_by_structure(ctx: Any, expression: str, limit: int) -> list[Any]:
     """Search declarations by structural similarity.
 
     Returns up to *limit* result items ranked by structural score.
     """
     # Step 1: Parse expression (ParseError propagates)
+    _ensure_parser(ctx)
     constr_node = ctx.parser.parse(expression)
 
     # Steps 2-3: Normalize (NormalizationError -> empty results)
@@ -114,6 +123,7 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     Returns up to *limit* result items ranked by RRF-fused score.
     """
     # Step 1: Parse expression (ParseError propagates)
+    _ensure_parser(ctx)
     constr_node = ctx.parser.parse(type_expr)
 
     # Steps 2: Normalize (NormalizationError -> empty results)

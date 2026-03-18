@@ -158,7 +158,7 @@ The pipeline shall NOT store raw filesystem paths (e.g., `/Users/.../PeanoNat.vo
 
 For each declaration extracted from a `.vo` file:
 
-1. When `constr_t` contains kernel term data (i.e., is not a metadata dict): Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs). When `constr_t` is metadata-only (a dict without kernel term data), skip steps 1–5 and store a partial result with no tree, empty symbol set, empty WL vector, and `node_count` = 1. These declarations are not matchable by structural, symbol, or WL-based search channels; they are reachable only via name-based search (`search_by_name`) and full-text search.
+1. When `constr_t` contains kernel term data (i.e., is not a metadata dict): Parse `Constr.t` → `ConstrNode` (backend-specific; produces pre-resolved FQNs). When `constr_t` is metadata-only (a dict with `type_signature` field), parse the `type_signature` text via `TypeExprParser` → `ConstrNode`, then proceed with steps 2–5 using the parsed node. If parsing fails, fall back to a partial result with no tree, empty symbol set, empty WL vector, and `node_count` = 1. Parse failures are logged but do not abort the declaration.
 2. `coq_normalize(constr_node)` → normalized `ExprTree`
 3. `cse_normalize(tree)` → CSE-reduced tree (recomputes depths, node_ids, node_count)
 4. `extract_consts(tree)` → symbol set
@@ -176,15 +176,32 @@ The declaration row, WL vector, and declaration data are co-inserted in the same
 
 After all declarations are inserted:
 
-1. For each declaration, call `backend.get_dependencies(name)`
-2. Resolve target names to declaration IDs (skip unresolved targets — they reference declarations outside the indexed scope)
-3. Insert dependency edges in batches
+1. For each declaration, collect dependency pairs from both tree-based and backend-based sources (see below)
+2. Resolve target names to declaration IDs using multi-strategy name resolution (see below)
+3. Deduplicate edges by (src, dst, relation) tuple
+4. Insert dependency edges in batches
 
 All dependency edges shall use the relation values defined in the `dependencies` entity ([index-entities.md](../doc/architecture/data-models/index-entities.md)): `"uses"` or `"instance_of"`. No other relation values shall be stored.
 
-**Tree-based dependency extraction** (when expression tree is available): `extract_dependencies(tree)` walks `LConst` nodes to produce `"uses"` edges and reads instance metadata for `"instance_of"` edges. These are direct structural references.
+#### Dependency Sources
+
+**Tree-based dependency extraction** (when expression tree is available): `extract_dependencies(tree)` walks `LConst` nodes to produce `"uses"` edges and reads instance metadata for `"instance_of"` edges. These are direct structural references with fully qualified names — no name resolution is needed.
 
 **Metadata-only declarations** (no expression tree): The backend's `get_dependencies(name)` provides dependency information. When the backend uses `Print Assumptions` (coq-lsp), the output represents transitive axiom dependencies, not direct term references. These edges shall be stored with relation `"uses"` as an approximation. The approximation is acceptable because `Print Assumptions` output is a superset of direct references for most declarations, and the dependency graph is navigational (not scored).
+
+When both sources are available for a declaration, their edges shall be merged and deduplicated.
+
+#### Name Resolution Strategy
+
+`Print Assumptions` returns dependency names with qualification that may differ from the canonical fully qualified names stored in the index (e.g., `Nat.add` vs `Coq.Init.Nat.add`). The resolver shall attempt matching in the following order:
+
+1. **Exact match** against the name-to-ID map.
+2. **`Coq.` prefix**: prepend `Coq.` and retry (handles stdlib names like `Init.Nat.add`).
+3. **Suffix match**: build a reverse lookup from all dot-separated suffixes of each FQN. If the target name matches exactly one FQN's suffix, resolve to that FQN. If the suffix is ambiguous (maps to multiple distinct FQNs), skip it.
+
+Unresolved targets (no match after all strategies) are silently skipped — they reference declarations outside the indexed scope.
+
+The suffix reverse lookup table shall be built once per `resolve_and_insert_dependencies` call from all FQNs in the name-to-ID map.
 
 ### 4.6 Post-Processing
 

@@ -13,18 +13,17 @@ Offline extraction of declarations from compiled Coq/Rocq libraries into the sea
 .vo files (compiled Coq libraries)
   │
   ▼
-coq-lsp or SerAPI
-  │  List declarations: (name, type_sig) per module
-  │  Detect kind per declaration (backend-dependent; may require additional queries)
-  │  Read each declaration's Constr.t kernel term (when available; backend-dependent)
+coq-lsp
+  │  List declarations: (name, type_sig) per module via Search
+  │  Detect kind per declaration (About queries, batched)
   │
   ▼
 Deduplicate declarations by fully qualified name (keep first occurrence)
   │
   ▼
 Per-declaration processing:
-  1. Parse Constr.t            → ConstrNode (with pre-resolved FQNs)
-     (steps 1–5 skipped when kernel term is unavailable — partial result stored)
+  1. Parse type_signature text → ConstrNode (via TypeExprParser)
+     (parse failure → partial result stored, declaration reachable only via name/FTS search)
   2. coq_normalize(constr_node)→ normalized ExprTree (constr_to_tree + recompute_depths + assign_node_ids)
   3. cse_normalize(tree)       → CSE-reduced tree (recomputes depths + node_ids after)
   4. extract_symbols(tree)     → symbol set {constants, inductives, constructors}
@@ -100,14 +99,36 @@ The `constr_tree` BLOB format is defined in [storage.md](storage.md). See the st
 
 ## Extraction Tooling
 
-Declarations are read from compiled `.vo` files via coq-lsp or SerAPI. Both tools can access `Constr.t` kernel terms, which are the input to the normalization pipeline. However, kernel term availability depends on the backend's extraction path:
+Declarations are read from compiled `.vo` files via coq-lsp. coq-lsp is the sole supported extraction backend (see [library-indexing.md](../features/library-indexing.md) for design rationale).
 
-- **SerAPI**: Returns `Constr.t` kernel terms directly (via `Print` S-expressions). All normalization pipeline steps produce complete results.
-- **coq-lsp**: The `Search _ inside M.` command returns textual `name : type_signature` pairs without kernel terms. Declarations indexed via this path have metadata (name, kind, statement, type signature, dependencies) but no structural data (no tree, no symbol set, no WL vectors). Structural and symbol-based search channels do not match these declarations; name-based and full-text search still work.
+The `Search _ inside M.` command returns textual `name : type_signature` pairs without kernel terms. To produce structural data (expression trees, symbol sets, WL histograms), the pipeline parses type signature strings into `ConstrNode` trees using a pure-Python text parser (`TypeExprParser`). This parser is used at both index time and query time for consistent structural matching.
 
-The backends also differ in how they expose declaration metadata. SerAPI provides kind information directly. coq-lsp requires a separate round-trip per declaration for kind detection, adding O(N) backend queries to the extraction pipeline. For large targets (stdlib+mathcomp, ~10,000+ declarations), this overhead increases extraction time from minutes to 30+ minutes.
+coq-lsp does not return declaration kinds directly. The backend issues a separate `About <name>.` query per declaration to determine kind, with queries batched into shared documents (≤100 per document) to reduce round-trip overhead.
 
-Key requirement: the extraction tool must be version-compatible with the installed Coq/Rocq version. The extracted library version is recorded in `index_meta` for stale detection.
+Key requirement: coq-lsp must be version-compatible with the installed Coq/Rocq version. The extracted library version is recorded in `index_meta` for stale detection.
+
+### Text-Based Type Parsing
+
+When coq-lsp returns a type signature string (e.g., `"forall n : nat, n + 0 = n"`), the `TypeExprParser` converts it to a `ConstrNode` tree:
+
+```
+type_signature string
+  │
+  ▼
+TypeExprParser.parse(text)
+  │  Tokenize → Pratt parse → resolve names (de Bruijn) → ConstrNode
+  │
+  ▼
+coq_normalize(constr_node) → ExprTree
+  │
+  ▼
+cse_normalize(tree) → CSE-reduced tree
+  │
+  ▼
+extract_symbols(tree), wl_histogram(tree, h=3)
+```
+
+The text parser produces `Const("nat")` rather than the kernel-precise `Ind("Coq.Init.Datatypes.nat")`. This is less precise than kernel terms, but since both index-time and query-time parsing use the same parser, WL histograms and symbol sets are internally consistent and structural matching works correctly.
 
 ## Error Handling
 

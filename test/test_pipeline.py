@@ -800,3 +800,406 @@ class TestResultsSortedDescending:
 
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# 15. _ensure_parser lazy initialization
+# ---------------------------------------------------------------------------
+
+import io
+import json
+import subprocess
+
+from poule.parsing.type_expr_parser import TypeExprParser
+from poule.pipeline.search import _ensure_parser
+
+
+def _make_lsp_message(msg_dict):
+    """Encode a JSON-RPC message with Content-Length framing."""
+    body = json.dumps(msg_dict).encode("utf-8")
+    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+    return header + body
+
+
+class TestEnsureParser:
+    """Tests for the _ensure_parser() lazy initialization."""
+
+    def test_initializes_parser_when_none(self):
+        """Given ctx.parser is None, after calling _ensure_parser, ctx.parser
+        is a TypeExprParser."""
+        ctx = _mock_context(parser=None)
+        # Allow attribute assignment on the mock
+        ctx.parser = None
+
+        _ensure_parser(ctx)
+
+        assert isinstance(ctx.parser, TypeExprParser)
+
+    def test_does_not_replace_existing_parser(self):
+        """Given ctx.parser is already set, _ensure_parser does not replace it."""
+        existing_parser = _mock_parser()
+        ctx = _mock_context(parser=existing_parser)
+
+        _ensure_parser(ctx)
+
+        assert ctx.parser is existing_parser
+
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
+    def test_search_by_structure_calls_ensure_parser(
+        self, mock_coq, mock_cse, mock_wl_hist, mock_wl_screen, mock_score
+    ):
+        """search_by_structure with ctx.parser=None should still work
+        (parser gets created via _ensure_parser)."""
+        ctx = _mock_context(parser=None)
+        ctx.parser = None
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq.return_value = MagicMock()
+        mock_cse.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = []
+        mock_score.return_value = []
+
+        # Patch TypeExprParser so we control its output
+        with patch(
+            "poule.parsing.type_expr_parser.TypeExprParser",
+            return_value=_mock_parser(),
+        ):
+            results = search_by_structure(ctx, "nat", limit=5)
+
+        assert isinstance(results, list)
+
+    @patch("poule.pipeline.search.rrf_fuse")
+    @patch("poule.pipeline.search.fts_search")
+    @patch("poule.pipeline.search.fts_query")
+    @patch("poule.pipeline.search.mepo_select")
+    @patch("poule.pipeline.search.extract_consts")
+    @patch("poule.pipeline.search.score_candidates")
+    @patch("poule.pipeline.search.wl_screen")
+    @patch("poule.pipeline.search.wl_histogram")
+    @patch("poule.pipeline.search.cse_normalize")
+    @patch("poule.pipeline.search.coq_normalize")
+    def test_search_by_type_calls_ensure_parser(
+        self,
+        mock_coq,
+        mock_cse,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+        mock_rrf,
+    ):
+        """search_by_type with ctx.parser=None should still work."""
+        ctx = _mock_context(parser=None)
+        ctx.parser = None
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq.return_value = MagicMock()
+        mock_cse.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = []
+        mock_score.return_value = []
+        mock_extract.return_value = set()
+        mock_mepo.return_value = []
+        mock_fts_query.return_value = "nat"
+        mock_fts_search.return_value = []
+        mock_rrf.return_value = []
+
+        with patch(
+            "poule.parsing.type_expr_parser.TypeExprParser",
+            return_value=_mock_parser(),
+        ):
+            results = search_by_type(ctx, "nat", limit=5)
+
+        assert isinstance(results, list)
+
+
+# ---------------------------------------------------------------------------
+# 16. CoqLspParser unit tests (mocked subprocess)
+# ---------------------------------------------------------------------------
+
+from poule.pipeline.coqlsp_parser import CoqLspParser
+
+
+def _mock_popen(stdout_bytes):
+    """Create a mock Popen whose stdout is a BytesIO with the given bytes."""
+    proc = MagicMock()
+    proc.stdin = MagicMock()
+    proc.stdout = io.BytesIO(stdout_bytes)
+    proc.stderr = MagicMock()
+    proc.poll.return_value = None  # process is alive
+    proc.wait.return_value = 0
+    return proc
+
+
+def _build_lsp_responses_for_parse(
+    *,
+    diagnostics=None,
+    goals_messages=None,
+    initialize_result=None,
+):
+    """Build concatenated LSP response bytes for a full parse() call.
+
+    The sequence is:
+    1. initialize response (id=1)
+    2. publishDiagnostics notification
+    3. proof/goals response (id=2)
+    4. shutdown response (id depends on flow, but not needed for parse)
+    """
+    if initialize_result is None:
+        initialize_result = {"capabilities": {}}
+    if diagnostics is None:
+        diagnostics = []
+    if goals_messages is None:
+        goals_messages = []
+
+    responses = b""
+
+    # 1. Initialize response (request id=1)
+    responses += _make_lsp_message(
+        {"jsonrpc": "2.0", "id": 1, "result": initialize_result}
+    )
+
+    # 2. publishDiagnostics notification
+    responses += _make_lsp_message(
+        {
+            "jsonrpc": "2.0",
+            "method": "textDocument/publishDiagnostics",
+            "params": {
+                "uri": "file:///tmp/poule_parser_0.v",
+                "diagnostics": diagnostics,
+            },
+        }
+    )
+
+    # 3. proof/goals response (request id=2)
+    responses += _make_lsp_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"messages": goals_messages},
+        }
+    )
+
+    return responses
+
+
+class TestCoqLspParserUnit:
+    """Unit tests for CoqLspParser with mocked subprocess."""
+
+    @patch("poule.pipeline.coqlsp_parser.parse_constr_json")
+    @patch("poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_parse_returns_constr_node(self, mock_popen_cls, mock_parse_constr):
+        """Mock coq-lsp responses; verify parse() returns the result of
+        parse_constr_json."""
+        raw_constr = {"v": ["Ind", {"name": "nat"}]}
+        constr_node = MagicMock()
+        mock_parse_constr.return_value = constr_node
+
+        responses = _build_lsp_responses_for_parse(
+            diagnostics=[],
+            goals_messages=[{"level": 0, "raw": raw_constr}],
+        )
+        proc = _mock_popen(responses)
+        mock_popen_cls.return_value = proc
+
+        parser = CoqLspParser()
+        result = parser.parse("nat")
+
+        mock_parse_constr.assert_called_once_with(raw_constr)
+        assert result is constr_node
+
+    @patch("poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_parse_raises_parse_error_on_diagnostic_error(self, mock_popen_cls):
+        """Mock error diagnostics; verify ParseError is raised."""
+        error_diag = {
+            "severity": 1,
+            "message": "The reference foobar was not found",
+        }
+        responses = _build_lsp_responses_for_parse(
+            diagnostics=[error_diag],
+        )
+        proc = _mock_popen(responses)
+        mock_popen_cls.return_value = proc
+
+        parser = CoqLspParser()
+
+        with pytest.raises(ParseError, match="Coq rejected expression"):
+            parser.parse("foobar")
+
+    @patch("poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_parse_raises_parse_error_when_coq_lsp_not_found(
+        self, mock_popen_cls
+    ):
+        """Patch subprocess.Popen to raise FileNotFoundError; verify
+        ParseError."""
+        mock_popen_cls.side_effect = FileNotFoundError("coq-lsp not found")
+
+        parser = CoqLspParser()
+
+        with pytest.raises(ParseError, match="coq-lsp not found on PATH"):
+            parser.parse("nat")
+
+    def test_ensure_started_is_lazy(self):
+        """Verify coq-lsp isn't spawned until parse() is called."""
+        parser = CoqLspParser()
+
+        # The process should be None before any parse call
+        assert parser._proc is None
+
+    @patch("poule.pipeline.coqlsp_parser.subprocess.Popen")
+    def test_close_sends_shutdown(self, mock_popen_cls):
+        """Verify close() sends shutdown request."""
+        # Build responses for: initialize + parse sequence + shutdown
+        init_response = _make_lsp_message(
+            {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {}}}
+        )
+        diag_notification = _make_lsp_message(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/publishDiagnostics",
+                "params": {
+                    "uri": "file:///tmp/poule_parser_0.v",
+                    "diagnostics": [],
+                },
+            }
+        )
+        goals_response = _make_lsp_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "messages": [{"level": 0, "raw": {"v": ["Sort", "Set"]}}]
+                },
+            }
+        )
+        shutdown_response = _make_lsp_message(
+            {"jsonrpc": "2.0", "id": 3, "result": None}
+        )
+
+        all_responses = (
+            init_response + diag_notification + goals_response + shutdown_response
+        )
+        proc = _mock_popen(all_responses)
+        mock_popen_cls.return_value = proc
+
+        with patch("poule.pipeline.coqlsp_parser.parse_constr_json"):
+            parser = CoqLspParser()
+            parser.parse("nat")
+            parser.close()
+
+        # Verify shutdown was sent by checking that write was called
+        # with a message containing "shutdown"
+        write_calls = proc.stdin.write.call_args_list
+        shutdown_sent = any(
+            b'"shutdown"' in call[0][0] for call in write_calls
+        )
+        assert shutdown_sent, "shutdown request was not sent during close()"
+
+        # Verify exit notification was sent
+        exit_sent = any(b'"exit"' in call[0][0] for call in write_calls)
+        assert exit_sent, "exit notification was not sent during close()"
+
+        proc.wait.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# 17. CoqLspParser contract tests (real coq-lsp)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.requires_coq
+class TestCoqLspParserContract:
+    """Contract tests exercising real coq-lsp.
+
+    These tests require coq-lsp to be installed and on PATH.
+    Run with: pytest -m requires_coq
+
+    Note: coq-lsp currently returns text output (not structured Constr.t
+    JSON) for ``Check`` commands via ``proof/goals``.  Positive parse tests
+    are marked ``xfail`` until coq-lsp supports structured constr output
+    or the parser is extended with a text-to-ConstrNode fallback.
+    """
+
+    @pytest.mark.xfail(
+        reason="coq-lsp returns text, not structured Constr.t JSON",
+        raises=ParseError,
+    )
+    def test_parse_simple_nat_expression(self):
+        """Parse "nat" — currently xfail because coq-lsp lacks structured output."""
+        parser = CoqLspParser()
+        try:
+            result = parser.parse("nat")
+            import poule.normalization.constr_node as cn
+
+            valid_types = (
+                cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,
+                cn.LetIn, cn.App, cn.Const, cn.Ind, cn.Construct,
+                cn.Case, cn.Fix, cn.CoFix, cn.Proj, cn.Int, cn.Float,
+            )
+            assert isinstance(result, valid_types), (
+                f"Expected a ConstrNode variant, got {type(result)}"
+            )
+        finally:
+            parser.close()
+
+    @pytest.mark.xfail(
+        reason="coq-lsp returns text, not structured Constr.t JSON",
+        raises=ParseError,
+    )
+    def test_parse_forall_expression(self):
+        """Parse 'forall n : nat, n = n' — currently xfail."""
+        parser = CoqLspParser()
+        try:
+            result = parser.parse("forall n : nat, n = n")
+            import poule.normalization.constr_node as cn
+
+            valid_types = (
+                cn.Rel, cn.Var, cn.Sort, cn.Cast, cn.Prod, cn.Lambda,
+                cn.LetIn, cn.App, cn.Const, cn.Ind, cn.Construct,
+                cn.Case, cn.Fix, cn.CoFix, cn.Proj, cn.Int, cn.Float,
+            )
+            assert isinstance(result, valid_types), (
+                f"Expected a ConstrNode variant, got {type(result)}"
+            )
+        finally:
+            parser.close()
+
+    def test_parse_invalid_expression_raises(self):
+        """Parse 'not_a_valid_coq_thing!!!' and verify ParseError."""
+        parser = CoqLspParser()
+        try:
+            with pytest.raises(ParseError):
+                parser.parse("not_a_valid_coq_thing!!!")
+        finally:
+            parser.close()
+
+    def test_close_terminates_process(self):
+        """Verify close() terminates the coq-lsp subprocess."""
+        parser = CoqLspParser()
+        # Trigger _ensure_started by attempting a parse (will raise ParseError
+        # because coq-lsp returns text, not structured JSON — catch it)
+        try:
+            parser.parse("nat")
+        except ParseError:
+            pass
+
+        # Process should be running
+        assert parser._proc is not None
+        proc = parser._proc
+
+        parser.close()
+
+        # After close, internal ref should be None
+        assert parser._proc is None
+        # The real process should have terminated
+        assert proc.poll() is not None

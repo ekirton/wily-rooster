@@ -29,7 +29,11 @@ For each declaration in a Coq library:
 
 ## Extraction Method
 
-Declarations are extracted from compiled Coq libraries using available tooling (coq-lsp or SerAPI).
+Declarations are extracted from compiled Coq libraries using coq-lsp. coq-lsp is the sole supported extraction backend.
+
+### Structural data from type signatures
+
+coq-lsp's `Search` command returns textual type signatures (e.g., `"forall n : nat, n + 0 = n"`) but not kernel terms. To enable structural and type-based search, the extraction pipeline parses these type signature strings into the same intermediate representation used by the normalization pipeline. This text-based parsing produces structural data (expression trees, symbol sets, WL histograms) that is internally consistent: both the index and query-time parsing use the same parser, so structural matching works despite the representations being less precise than kernel terms.
 
 ## Index Versioning
 
@@ -62,3 +66,11 @@ Single file, no external services, portable across machines. SQLite provides bui
 ### Why zero-config
 
 The target user is a Coq developer who wants search, not a systems administrator. Indexing must work with a single command, no GPU, no network access, no API keys (beyond Claude Code itself).
+
+### Why coq-lsp only
+
+SerAPI (coq-serapi) provides deeper access to Coq kernel terms but is version-locked to specific Coq/OCaml combinations, is unmaintained for Rocq 9.x, and adds unsustainable complexity to the container and build process. coq-lsp is actively developed, stable across Coq versions, and provides sufficient metadata for all search channels when combined with text-based type parsing. Supporting a single backend eliminates an entire class of consistency bugs (mixed-backend indexes) and reduces the maintenance surface.
+
+### Why text-based type parsing over kernel terms
+
+coq-lsp does not expose Constr.t kernel terms — it returns type signatures as text strings. Rather than requiring an additional heavy tool (SerAPI) solely for kernel term access, the system parses these text strings into the same ConstrNode intermediate representation. The text parser produces `Const("nat")` rather than the kernel-precise `Ind("Coq.Init.Datatypes.nat")`, but since both index-time and query-time parsing use the same parser, the structural representations are internally consistent and structural matching works correctly. This tradeoff — consistency over precision — avoids external process dependencies at both index time and query time.

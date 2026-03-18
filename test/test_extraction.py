@@ -485,6 +485,164 @@ class TestPass2UnresolvedTargets:
         writer.resolve_and_insert_dependencies.assert_called()
 
 
+class TestPass2NameResolution:
+    """Name resolution strategies in resolve_and_insert_dependencies (§4.5)."""
+
+    def _make_writer_and_call(self, results, name_to_id):
+        """Helper: create a PipelineWriter with a mock IndexWriter, call
+        resolve_and_insert_dependencies, and return the mock IndexWriter
+        so callers can inspect insert_dependencies calls."""
+        from poule.extraction.pipeline import PipelineWriter
+
+        index_writer = Mock()
+        pw = PipelineWriter(index_writer)
+        pw.resolve_and_insert_dependencies(results, name_to_id)
+        return index_writer
+
+    def _make_result(self, name, dependency_names, tree=None):
+        """Helper: build a DeclarationResult for testing."""
+        from poule.extraction.pipeline import DeclarationResult
+
+        return DeclarationResult(
+            name=name,
+            kind="lemma",
+            module="Test.Module",
+            statement="forall n, n = n",
+            type_expr=None,
+            tree=tree,
+            symbol_set=[],
+            wl_vector={},
+            dependency_names=dependency_names,
+        )
+
+    def test_exact_match_resolves(self):
+        """Dependency name exactly matches a name in the index -> edge inserted."""
+        r = self._make_result("A.lemma1", [("B.lemma2", "uses")])
+        name_to_id = {"A.lemma1": 1, "B.lemma2": 2}
+
+        iw = self._make_writer_and_call([r], name_to_id)
+
+        iw.insert_dependencies.assert_called_once()
+        edges = iw.insert_dependencies.call_args[0][0]
+        assert len(edges) == 1
+        assert edges[0] == {"src": 1, "dst": 2, "relation": "uses"}
+
+    def test_coq_prefix_resolves(self):
+        """Dependency name like Init.Nat.add resolves via Coq.Init.Nat.add."""
+        r = self._make_result("A.lemma1", [("Init.Nat.add", "uses")])
+        name_to_id = {"A.lemma1": 1, "Coq.Init.Nat.add": 10}
+
+        iw = self._make_writer_and_call([r], name_to_id)
+
+        iw.insert_dependencies.assert_called_once()
+        edges = iw.insert_dependencies.call_args[0][0]
+        assert len(edges) == 1
+        assert edges[0] == {"src": 1, "dst": 10, "relation": "uses"}
+
+    def test_suffix_match_resolves(self):
+        """Dependency name like Nat.add resolves via suffix match against
+        Coq.Init.Nat.add when suffix is unambiguous."""
+        r = self._make_result("A.lemma1", [("Nat.add", "uses")])
+        # Only one FQN ends with .Nat.add, so suffix is unambiguous
+        name_to_id = {"A.lemma1": 1, "Coq.Init.Nat.add": 10}
+
+        iw = self._make_writer_and_call([r], name_to_id)
+
+        iw.insert_dependencies.assert_called_once()
+        edges = iw.insert_dependencies.call_args[0][0]
+        assert len(edges) == 1
+        assert edges[0] == {"src": 1, "dst": 10, "relation": "uses"}
+
+    def test_ambiguous_suffix_skipped(self):
+        """When suffix matches multiple distinct FQNs, the edge is skipped."""
+        r = self._make_result("A.lemma1", [("add", "uses")])
+        # "add" is a suffix of both FQNs -> ambiguous -> skipped
+        name_to_id = {
+            "A.lemma1": 1,
+            "Coq.Init.Nat.add": 10,
+            "Coq.Init.List.add": 20,
+        }
+
+        iw = self._make_writer_and_call([r], name_to_id)
+
+        # No edges inserted because the only dependency was ambiguous
+        iw.insert_dependencies.assert_not_called()
+
+    def test_self_reference_skipped(self):
+        """Dependency pointing to the same declaration is filtered out."""
+        r = self._make_result("A.lemma1", [("A.lemma1", "uses")])
+        name_to_id = {"A.lemma1": 1}
+
+        iw = self._make_writer_and_call([r], name_to_id)
+
+        # Self-reference filtered, no edges to insert
+        iw.insert_dependencies.assert_not_called()
+
+    def test_tree_based_extraction_supplements(self):
+        """When a result has a normalised tree, LConst edges from
+        extract_dependencies are merged with Print Assumptions edges."""
+        # Create a mock tree so the tree-based branch is entered
+        mock_tree = Mock()
+        r = self._make_result(
+            "A.lemma1",
+            [("B.lemma2", "uses")],  # from Print Assumptions
+            tree=mock_tree,
+        )
+        name_to_id = {"A.lemma1": 1, "B.lemma2": 2, "C.def1": 3}
+
+        # Patch extract_dependencies to return an additional edge
+        with patch(
+            "poule.extraction.pipeline.extract_dependencies",
+            create=True,
+        ) as mock_extract, patch(
+            "poule.extraction.dependency_extraction.extract_dependencies",
+            create=True,
+        ):
+            mock_extract.return_value = [("C.def1", "uses")]
+
+            # We need to patch inside the module where it's imported
+            # The function is imported lazily inside resolve_and_insert_dependencies
+            with patch.dict(
+                "sys.modules",
+                {"poule.extraction.dependency_extraction": Mock(
+                    extract_dependencies=Mock(return_value=[("C.def1", "uses")])
+                )},
+            ):
+                iw = self._make_writer_and_call([r], name_to_id)
+
+        iw.insert_dependencies.assert_called_once()
+        edges = iw.insert_dependencies.call_args[0][0]
+        # Should have edges from both sources
+        src_dst_pairs = {(e["src"], e["dst"]) for e in edges}
+        assert (1, 2) in src_dst_pairs  # from Print Assumptions
+        assert (1, 3) in src_dst_pairs  # from tree-based extraction
+
+    def test_deduplication(self):
+        """Same edge from both sources is only inserted once."""
+        mock_tree = Mock()
+        # Both Print Assumptions and tree extraction yield the same edge
+        r = self._make_result(
+            "A.lemma1",
+            [("B.lemma2", "uses")],
+            tree=mock_tree,
+        )
+        name_to_id = {"A.lemma1": 1, "B.lemma2": 2}
+
+        with patch.dict(
+            "sys.modules",
+            {"poule.extraction.dependency_extraction": Mock(
+                extract_dependencies=Mock(return_value=[("B.lemma2", "uses")])
+            )},
+        ):
+            iw = self._make_writer_and_call([r], name_to_id)
+
+        iw.insert_dependencies.assert_called_once()
+        edges = iw.insert_dependencies.call_args[0][0]
+        # Deduplicated: only one edge despite two sources
+        assert len(edges) == 1
+        assert edges[0] == {"src": 1, "dst": 2, "relation": "uses"}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 5. Post-Processing
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1317,12 +1475,12 @@ class TestPrefetchedData:
 
 
 class TestMetadataOnlyConstrT:
-    """When constr_t is a metadata dict (coq-lsp backend), normalization is
-    skipped and a partial result is stored without error (§4.4 step 1)."""
+    """When constr_t is a metadata dict (coq-lsp backend), type_signature is
+    parsed via TypeExprParser and normalized (§4.4 step 1, updated)."""
 
-    def test_dict_constr_t_skips_normalization_without_error(self, caplog):
-        """A dict constr_t produces a valid result with tree=None and no
-        normalization error in the log."""
+    def test_dict_constr_t_parses_type_signature(self, caplog):
+        """A dict constr_t with type_signature produces a valid result with
+        a normalized tree, symbol set, and WL vector."""
         import logging
         from poule.extraction.pipeline import process_declaration
 
@@ -1340,15 +1498,32 @@ class TestMetadataOnlyConstrT:
             )
 
         assert result is not None
-        assert result.tree is None
-        assert result.symbol_set == []
-        assert result.wl_vector == {}
-        # No normalization warning should be logged for metadata-only constr_t
+        assert result.tree is not None
+        assert "nat" in result.symbol_set
+        assert len(result.wl_vector) > 0
+        # No normalization warning should be logged
         normalization_warnings = [
             r for r in caplog.records
             if "Normalization failed" in r.message
         ]
         assert normalization_warnings == []
+
+    def test_dict_constr_t_without_type_signature_has_no_tree(self):
+        """A dict constr_t without type_signature produces partial result."""
+        from poule.extraction.pipeline import process_declaration
+
+        backend = _make_mock_backend()
+        constr_t = {"name": "Nat.add", "source": "coq-lsp"}
+
+        result = process_declaration(
+            "Nat.add", "Definition", constr_t, backend, "/fake/Nat.vo",
+            statement="Nat.add = ...", dependency_names=[],
+        )
+
+        assert result is not None
+        assert result.tree is None
+        assert result.symbol_set == []
+        assert result.wl_vector == {}
 
     def test_dict_constr_t_preserves_type_signature(self):
         """type_expr is extracted from the dict's type_signature field."""

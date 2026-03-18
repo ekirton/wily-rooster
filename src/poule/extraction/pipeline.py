@@ -21,6 +21,18 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
 
+# Module-level singleton for text-based type parsing
+_type_parser_instance = None
+
+
+def _get_type_parser():
+    """Return a shared TypeExprParser instance (lazy singleton)."""
+    global _type_parser_instance
+    if _type_parser_instance is None:
+        from poule.parsing.type_expr_parser import TypeExprParser
+        _type_parser_instance = TypeExprParser()
+    return _type_parser_instance
+
 
 # ---------------------------------------------------------------------------
 # Result dataclass for processed declarations
@@ -112,19 +124,89 @@ class PipelineWriter:
         """Resolve dependency names to IDs and insert edges.
 
         Skips unresolved targets and self-references.
+
+        Name resolution strategy (for ``Print Assumptions`` output that
+        may return short names instead of fully-qualified names):
+
+        1. Exact match in *name_to_id*.
+        2. Try prefixing with ``Coq.`` (e.g. ``Init.Nat.add`` →
+           ``Coq.Init.Nat.add``).
+        3. Suffix match — find any FQN in *name_to_id* that ends with
+           ``.<short_name>``.
+
+        Additionally, if a result carries a normalised expression tree,
+        fully-qualified ``uses`` edges are extracted directly from
+        ``LConst`` nodes in the tree, bypassing ``Print Assumptions``
+        entirely for those edges.
         """
+        # Build a reverse lookup: short suffix → FQN for efficient
+        # suffix matching.  For each FQN like "Coq.Init.Nat.add", we
+        # index all suffixes: "Init.Nat.add", "Nat.add", "add".
+        # If a suffix maps to multiple FQNs we store None to signal
+        # ambiguity (and skip it).
+        suffix_to_fqn: dict[str, str | None] = {}
+        for fqn in name_to_id:
+            parts = fqn.split(".")
+            for k in range(1, len(parts)):
+                suffix = ".".join(parts[k:])
+                if suffix in suffix_to_fqn:
+                    # Mark ambiguous — don't use this suffix
+                    if suffix_to_fqn[suffix] != fqn:
+                        suffix_to_fqn[suffix] = None
+                else:
+                    suffix_to_fqn[suffix] = fqn
+
+        def _resolve(target_name: str) -> int | None:
+            """Try to resolve a dependency name to a declaration ID."""
+            # 1. Exact match
+            dst_id = name_to_id.get(target_name)
+            if dst_id is not None:
+                return dst_id
+            # 2. Try Coq. prefix
+            coq_name = "Coq." + target_name
+            dst_id = name_to_id.get(coq_name)
+            if dst_id is not None:
+                return dst_id
+            # 3. Suffix match via reverse lookup
+            fqn = suffix_to_fqn.get(target_name)
+            if fqn is not None:
+                return name_to_id.get(fqn)
+            return None
+
         edges: list[dict] = []
+        seen_edges: set[tuple[int, int, str]] = set()
+
         for r in all_results:
             src_id = name_to_id.get(r.name)
             if src_id is None:
                 continue
-            dep_names = getattr(r, "dependency_names", [])
+
+            # Collect dependency pairs from Print Assumptions
+            dep_names: list[tuple[str, str]] = getattr(r, "dependency_names", []) or []
+
+            # Supplement with tree-based extraction (FQN names)
+            tree = getattr(r, "tree", None)
+            if tree is not None:
+                try:
+                    from .dependency_extraction import extract_dependencies
+                    tree_deps = extract_dependencies(tree, r.name)
+                    dep_names = list(dep_names) + tree_deps
+                except Exception:
+                    logger.debug(
+                        "Tree-based dependency extraction failed for %s",
+                        r.name, exc_info=True,
+                    )
+
             for target_name, relation in dep_names:
-                dst_id = name_to_id.get(target_name)
+                dst_id = _resolve(target_name)
                 if dst_id is None:
                     continue
                 if src_id == dst_id:
                     continue
+                edge_key = (src_id, dst_id, relation)
+                if edge_key in seen_edges:
+                    continue
+                seen_edges.add(edge_key)
                 edges.append({
                     "src": src_id,
                     "dst": dst_id,
@@ -219,6 +301,21 @@ def process_declaration(
                 "Normalization failed for %s, storing partial result", name,
                 exc_info=True,
             )
+    else:
+        # Metadata-only: parse type_signature text → ConstrNode → normalize
+        type_sig = constr_t.get("type_signature")
+        if type_sig:
+            try:
+                constr_node = _get_type_parser().parse(type_sig)
+                tree = coq_normalize(constr_node)
+                cse_normalize(tree)
+                symbol_set = list(extract_consts(tree))
+                wl_vector = wl_histogram(tree, h=3)
+            except Exception:
+                logger.debug(
+                    "Text-based normalization failed for %s, storing partial result",
+                    name, exc_info=True,
+                )
 
     # Type expression: prefer constr_t["type_signature"] from Search output
     type_expr = None

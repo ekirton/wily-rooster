@@ -19,7 +19,7 @@ The neural channel is optional. When unavailable (no model checkpoint, no embedd
 ### search_by_structure
 
 ```
-1. Parse the query expression (via coq-lsp) → ConstrNode (parser lifecycle owned by pipeline; started on first structural query, kept alive for server lifetime)
+1. Parse the query expression (via TypeExprParser) → ConstrNode (pure Python, no subprocess; instantiated on first structural query, kept alive for server lifetime)
 2. coq_normalize(constr_node)            → normalized ExprTree (includes constr_to_tree + recompute_depths + assign_node_ids)
 3. cse_normalize(tree)                   → CSE-reduced tree (recomputes depths + node_ids)
 4. wl_histogram(tree, h=3)              → query histogram

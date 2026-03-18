@@ -24,6 +24,20 @@ class StrategyDiagnostic:
 
 
 @dataclass
+class ClassifiedOutput:
+    """Output of the Result Interpreter (interpret_result).
+
+    Classifies raw Coq output into a structured result that the caller
+    uses to build a StrategyDiagnostic (on failure) or populate success
+    fields of a HammerResult (on success).
+    """
+
+    classification: str  # "success" | "timeout" | "no_proof_found" | "reconstruction_failed" | "tactic_error"
+    detail: Optional[str] = None
+    partial_progress: Optional[str] = None
+
+
+@dataclass
 class HammerResult:
     """Output of a hammer automation invocation."""
 

@@ -258,11 +258,9 @@ async def trace_resolution(
         )
 
     if not root_nodes:
-        return ResolutionTrace(
-            goal="",
-            root_nodes=[],
-            succeeded=False,
-            failure_mode=None,
+        raise TypeclassError(
+            "PARSE_ERROR",
+            "Failed to parse typeclass debug output. Raw output is included in the response.",
             raw_output=debug_output,
         )
 

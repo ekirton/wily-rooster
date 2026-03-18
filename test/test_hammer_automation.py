@@ -11,7 +11,7 @@ Import paths under test:
   poule.hammer.engine        (execute_hammer, execute_auto_hammer)
   poule.hammer.tactic        (build_tactic)
   poule.hammer.interpret     (interpret_result)
-  poule.hammer.types         (HammerResult, StrategyDiagnostic)
+  poule.hammer.types         (HammerResult, StrategyDiagnostic, ClassifiedOutput)
   poule.hammer.errors        (ParseError)
 """
 
@@ -49,8 +49,8 @@ def _import_interpret_result():
 
 
 def _import_hammer_types():
-    from poule.hammer.types import HammerResult, StrategyDiagnostic
-    return HammerResult, StrategyDiagnostic
+    from poule.hammer.types import HammerResult, StrategyDiagnostic, ClassifiedOutput
+    return HammerResult, StrategyDiagnostic, ClassifiedOutput
 
 
 def _import_parse_error():
@@ -123,7 +123,7 @@ def _make_hammer_result(
     wall_time_ms=2400,
 ):
     """Build a HammerResult using the real type."""
-    HammerResult, _ = _import_hammer_types()
+    HammerResult, _, *_ = _import_hammer_types()
     if state is None:
         state = _make_complete_state() if status == "success" else _make_proof_state()
     if diagnostics is None:
@@ -148,7 +148,7 @@ def _make_strategy_diagnostic(
     timeout_used=30,
 ):
     """Build a StrategyDiagnostic using the real type."""
-    _, StrategyDiagnostic = _import_hammer_types()
+    _, StrategyDiagnostic, *_ = _import_hammer_types()
     return StrategyDiagnostic(
         strategy=strategy,
         failure_reason=failure_reason,
@@ -227,7 +227,7 @@ class TestSingleStrategyExecution:
         Then a HammerResult with status='success', strategy_used='hammer',
         and a non-null proof_script is returned."""
         execute_hammer = _import_execute_hammer()
-        HammerResult, _ = _import_hammer_types()
+        HammerResult, _, *_ = _import_hammer_types()
         complete_state = _make_complete_state()
         manager = _make_mock_session_manager(
             tactic_results={
@@ -255,7 +255,7 @@ class TestSingleStrategyExecution:
         Then a HammerResult with status='failure' and one StrategyDiagnostic entry
         is returned, and the proof session state is unchanged."""
         execute_hammer = _import_execute_hammer()
-        HammerResult, StrategyDiagnostic = _import_hammer_types()
+        HammerResult, StrategyDiagnostic, *_ = _import_hammer_types()
         initial_state = _make_proof_state()
         manager = _make_mock_session_manager(
             initial_state=initial_state,
@@ -409,7 +409,7 @@ class TestSingleStrategyExecution:
         Verifies that the mock-based tests above match the real interface.
         """
         execute_hammer = _import_execute_hammer()
-        HammerResult, _ = _import_hammer_types()
+        HammerResult, _, *_ = _import_hammer_types()
         from poule.session.manager import ProofSessionManager
         manager = ProofSessionManager()
 
@@ -428,7 +428,7 @@ class TestMultiStrategyFallback:
         Then a HammerResult with status='success', strategy_used='sauto' is
         returned, with diagnostics containing one entry for the failed hammer attempt."""
         execute_auto = _import_execute_auto_hammer()
-        HammerResult, StrategyDiagnostic = _import_hammer_types()
+        HammerResult, StrategyDiagnostic, *_ = _import_hammer_types()
         initial_state = _make_proof_state()
         complete_state = _make_complete_state()
 
@@ -649,7 +649,7 @@ class TestMultiStrategyFallback:
     async def test_contract_execute_auto_real_session(self):
         """Contract test: execute_auto_hammer against real Proof Session Manager."""
         execute_auto = _import_execute_auto_hammer()
-        HammerResult, _ = _import_hammer_types()
+        HammerResult, _, *_ = _import_hammer_types()
         from poule.session.manager import ProofSessionManager
         pytest.skip("Requires live Coq backend")
 
@@ -994,96 +994,93 @@ class TestTimeoutWrapping:
 # ===========================================================================
 
 class TestResultInterpreter:
-    """§4.7: interpret_result classifies Coq output into structured results."""
+    """§4.7: interpret_result classifies Coq output into a ClassifiedOutput."""
 
     def test_success_when_goal_closed(self):
         """Given Coq output indicating success and proof_state with is_complete=True,
         When interpret_result is called,
-        Then the result classification is 'success'."""
+        Then the result is a ClassifiedOutput with classification='success'."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         complete_state = _make_complete_state()
         result = interpret_result("No more subgoals.", complete_state)
-        assert result == "success" or (hasattr(result, "status") and result.status == "success")
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "success"
+        assert result.partial_progress is None
 
     def test_timeout_classification(self):
         """Given Coq output containing 'Timeout',
         When interpret_result is called,
-        Then the classification is 'timeout'."""
+        Then the result is a ClassifiedOutput with classification='timeout'."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         result = interpret_result("Error: Timeout", state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "timeout"
-        else:
-            assert result == "timeout"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "timeout"
 
     def test_no_proof_found_classification(self):
         """Given Coq output containing 'No proof found',
         When interpret_result is called,
-        Then the classification is 'no_proof_found'."""
+        Then the result is a ClassifiedOutput with classification='no_proof_found'."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         result = interpret_result("No proof found", state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "no_proof_found"
-        else:
-            assert result == "no_proof_found"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "no_proof_found"
 
     def test_hammer_failed_classification(self):
         """Given Coq output containing 'hammer failed',
         When interpret_result is called,
-        Then the classification is 'no_proof_found'."""
+        Then the result is a ClassifiedOutput with classification='no_proof_found'."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         result = interpret_result("hammer failed", state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "no_proof_found"
-        else:
-            assert result == "no_proof_found"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "no_proof_found"
 
     def test_reconstruction_failed_with_atp_proof(self):
         """Given Coq output containing 'Reconstruction failed' followed by an ATP proof,
         When interpret_result is called,
-        Then the result has failure_reason='reconstruction_failed' and
-        partial_progress contains the ATP proof text."""
+        Then the result is a ClassifiedOutput with classification='reconstruction_failed'
+        and partial_progress contains the ATP proof text."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         coq_output = "Reconstruction failed\nATP proof: by auto2 using lem1, lem2"
         result = interpret_result(coq_output, state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "reconstruction_failed"
-            assert result.partial_progress is not None
-            assert "ATP proof" in result.partial_progress or "auto2" in result.partial_progress
-        else:
-            assert result == "reconstruction_failed"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "reconstruction_failed"
+        assert result.partial_progress is not None
+        assert "ATP proof" in result.partial_progress or "auto2" in result.partial_progress
 
     def test_tactic_error_fallback(self):
         """Given Coq output containing 'Error: Unknown tactic hammer',
         When interpret_result is called,
-        Then the result has failure_reason='tactic_error' and detail contains
-        the raw error message."""
+        Then the result is a ClassifiedOutput with classification='tactic_error'
+        and detail contains the raw error message."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         coq_output = "Error: Unknown tactic hammer"
         result = interpret_result(coq_output, state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "tactic_error"
-            assert "Unknown tactic hammer" in result.detail
-        else:
-            assert result == "tactic_error"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "tactic_error"
+        assert "Unknown tactic hammer" in result.detail
 
     def test_unclassifiable_error_falls_back_to_tactic_error(self):
         """When the interpreter cannot classify an error message into a specific reason,
         the interpreter shall fall back to 'tactic_error' with the raw Coq error as detail."""
         interpret_result = _import_interpret_result()
+        _, _, ClassifiedOutput = _import_hammer_types()
         state = _make_proof_state()
         coq_output = "Error: Some completely unexpected Coq error"
         result = interpret_result(coq_output, state)
-        if hasattr(result, "failure_reason"):
-            assert result.failure_reason == "tactic_error"
-            assert "Some completely unexpected Coq error" in result.detail
-        else:
-            assert result == "tactic_error"
+        assert isinstance(result, ClassifiedOutput)
+        assert result.classification == "tactic_error"
+        assert "Some completely unexpected Coq error" in result.detail
 
     @pytest.mark.requires_coq
     def test_contract_interpret_result_real_coq_output(self):
@@ -1222,6 +1219,55 @@ class TestStrategyDiagnosticDataModel:
         """timeout_used is required; the timeout value (seconds) applied."""
         diag = _make_strategy_diagnostic(timeout_used=30)
         assert diag.timeout_used > 0
+
+
+# ===========================================================================
+# §5 Data Model — ClassifiedOutput
+# ===========================================================================
+
+class TestClassifiedOutputDataModel:
+    """§5: ClassifiedOutput field constraints."""
+
+    def test_classification_is_required(self):
+        """classification must be one of the defined enum values."""
+        _, _, ClassifiedOutput = _import_hammer_types()
+        valid = {"success", "timeout", "no_proof_found", "reconstruction_failed", "tactic_error"}
+        for cls in valid:
+            output = ClassifiedOutput(classification=cls, detail=None, partial_progress=None)
+            assert output.classification in valid
+
+    def test_detail_null_on_success(self):
+        """detail is null on success."""
+        _, _, ClassifiedOutput = _import_hammer_types()
+        output = ClassifiedOutput(classification="success", detail=None, partial_progress=None)
+        assert output.detail is None
+
+    def test_detail_present_on_tactic_error(self):
+        """detail contains human-readable error text on tactic_error."""
+        _, _, ClassifiedOutput = _import_hammer_types()
+        output = ClassifiedOutput(
+            classification="tactic_error",
+            detail="Error: Unknown tactic hammer",
+            partial_progress=None,
+        )
+        assert output.detail is not None
+        assert len(output.detail) > 0
+
+    def test_partial_progress_null_unless_reconstruction(self):
+        """partial_progress is null unless classification is 'reconstruction_failed'."""
+        _, _, ClassifiedOutput = _import_hammer_types()
+        output = ClassifiedOutput(classification="timeout", detail="Timeout", partial_progress=None)
+        assert output.partial_progress is None
+
+    def test_partial_progress_set_on_reconstruction_failed(self):
+        """partial_progress contains ATP proof text when reconstruction failed."""
+        _, _, ClassifiedOutput = _import_hammer_types()
+        output = ClassifiedOutput(
+            classification="reconstruction_failed",
+            detail="Reconstruction failed",
+            partial_progress="ATP proof: by auto2 using lem1",
+        )
+        assert output.partial_progress is not None
 
 
 # ===========================================================================
@@ -1693,7 +1739,7 @@ class TestSpecExamples:
         -> HammerResult with status="success", proof_script, atp_proof, strategy_used="hammer"
         """
         execute_hammer = _import_execute_hammer()
-        HammerResult, _ = _import_hammer_types()
+        HammerResult, _, *_ = _import_hammer_types()
         complete_state = _make_complete_state()
 
         manager = AsyncMock()

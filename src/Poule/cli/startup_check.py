@@ -183,13 +183,7 @@ def _download_missing(libraries_dir: Path, missing: list[str]) -> None:
 
 def main() -> None:
     """Entry point for ``python -m Poule.cli.startup_check``."""
-    libraries_dir = Path("/data")
-    # Allow override via environment
-    import os
-    env = os.environ.get("POULE_LIBRARIES_PATH")
-    if env:
-        libraries_dir = Path(env)
-    startup_check(libraries_dir)
+    startup_check(Path("/data"))
 
 
 if __name__ == "__main__":

@@ -34,7 +34,8 @@ RUN opam init --disable-sandboxing --auto-setup --bare && \
 RUN opam switch create coq ocaml-base-compiler.4.14.2 && \
     eval $(opam env --switch=coq) && \
     opam repo add coq-released https://coq.inria.fr/opam/released --all-switches && \
-    opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune && \
+    opam install -y coq.8.19.2 coq-lsp coq-hammer coq-dpdgraph dune \
+        coq-mathcomp-ssreflect coq-stdpp coq-flocq coq-coquelicot coq-interval && \
     opam clean -a -c -s --logs
 
 # Move opam to /opt so it's accessible to any user,

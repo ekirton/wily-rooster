@@ -5,7 +5,9 @@
 #   ensure-claude --update   Install if missing, update if outdated
 set -euo pipefail
 
-if ! command -v claude >/dev/null 2>&1; then
+CLAUDE_BIN="$HOME/.local/bin/claude"
+
+if [ ! -x "$CLAUDE_BIN" ] && ! command -v claude >/dev/null 2>&1; then
     echo "Installing Claude Code (first run)..."
     curl -fsSL https://claude.ai/install.sh | bash
 elif [ "${1:-}" = "--update" ]; then

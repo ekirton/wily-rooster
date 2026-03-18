@@ -1,47 +1,41 @@
 #!/bin/bash
 
-# Poule Launcher
-# Usage: poule [--pull] [--no-pull] [--dev] [command]
-# Runs Claude Code in a Docker container with the Coq toolchain and Poule MCP server
+# Poule Developer Launcher
+# Usage: poule-dev [--rebuild] [command]
+# Builds and runs a dev container with src/ live-mounted from the host.
+# Must be run from the poule project root.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
-REGISTRY_IMAGE="ghcr.io/ekirton/poule"
+DEV_IMAGE="poule:dev"
 
 # Parse arguments
-PULL=false
-DEV=false
+REBUILD=false
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --pull)
-            PULL=true
-            shift
-            ;;
-        --dev)
-            DEV=true
+        --rebuild)
+            REBUILD=true
             shift
             ;;
         --help|-h)
-            echo "Usage: poule [OPTIONS] [COMMAND]"
+            echo "Usage: poule-dev [OPTIONS] [COMMAND]"
             echo ""
-            echo "Run Claude Code in a container with Coq and the Poule MCP server."
+            echo "Run a dev container with live-mounted source from the poule project root."
+            echo "Builds the dev image automatically on first run (uses Dockerfile app-deps stage)."
             echo ""
             echo "OPTIONS:"
-            echo "  --pull             Force pull latest image from registry"
-            echo "  --dev              Live-mount src/ and test/ (run from poule project root)"
-            echo "                     Requires poule:dev image built by ./ci-local.sh"
+            echo "  --rebuild          Force rebuild the dev image"
             echo "  --help, -h         Show this help message"
             echo ""
             echo "EXAMPLES:"
-            echo "  poule                         Start interactive shell"
-            echo "  poule claude                   Run Claude Code directly"
-            echo "  poule --pull                   Force pull latest image"
-            echo "  poule coqc --version           Run a command in the container"
-            echo "  poule --dev uv run pytest      Run tests with live-mounted source"
+            echo "  poule-dev                         Start interactive dev shell"
+            echo "  poule-dev uv run pytest            Run tests with live-mounted source"
+            echo "  poule-dev coqc --version            Run a command in the container"
+            echo "  poule-dev --rebuild                 Rebuild the dev image and start shell"
             exit 0
             ;;
         *)
@@ -51,21 +45,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Get the current working directory
-CURRENT_DIR="$(pwd)"
-
-# Security check: don't allow mounting home directory
-if [ "$CURRENT_DIR" = "$HOME" ]; then
-    echo "Error: Cannot mount home directory for security reasons."
-    echo "Please run from within a specific project directory."
-    echo "Example: cd ~/Projects/my-coq-project && poule"
-    exit 1
-fi
-
-# Dev mode guard: must be run from the poule project root
-if [ "$DEV" = true ] && [ ! -d "$CURRENT_DIR/src/poule" ]; then
-    echo "Error: --dev must be run from the poule project root."
-    echo "Expected to find src/poule/ in: $CURRENT_DIR"
+# Must be run from the poule project root
+if [ ! -d "$PROJECT_DIR/src/poule" ]; then
+    echo "Error: must be run from the poule project root."
+    echo "Expected to find src/poule/ relative to bin/poule-dev"
     exit 1
 fi
 
@@ -75,32 +58,27 @@ HOST_GID=$(id -g)
 HOST_USER=$(id -un)
 HOST_GROUP=$(id -gn)
 
+# Build dev image if missing or --rebuild requested
+DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "^poule:dev$" || echo "0")
+if [ "$DEV_IMAGE_EXISTS" -eq 0 ] || [ "$REBUILD" = true ]; then
+    echo "Building dev image (app-deps stage, no src/ baked in)..."
+    docker build \
+        --target app-deps \
+        --build-arg HOST_UID="$HOST_UID" \
+        --build-arg HOST_GID="$HOST_GID" \
+        --build-arg HOST_USER="$HOST_USER" \
+        --build-arg HOST_GROUP="$HOST_GROUP" \
+        -t "$DEV_IMAGE" \
+        "$PROJECT_DIR"
+fi
+
 # Persistent home directory
 CONTAINER_HOME="$HOME/poule-home"
-FIRST_RUN="false"
 if [ ! -d "$CONTAINER_HOME" ]; then
-    FIRST_RUN="true"
     echo "Creating Poule home directory: $CONTAINER_HOME"
     mkdir -p "$CONTAINER_HOME"
 fi
 chmod 700 "$CONTAINER_HOME"
-
-# Normal mode: pull if image is missing or --pull requested
-if [ "$DEV" != true ]; then
-    IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "ghcr.io/ekirton/poule" || echo "0")
-    if [ "$IMAGE_EXISTS" -eq 0 ] || [ "$PULL" = true ]; then
-        docker pull "$REGISTRY_IMAGE"
-    fi
-fi
-
-# Dev mode: ensure poule:dev image exists, building it if needed
-if [ "$DEV" = true ]; then
-    DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "poule:dev" || echo "0")
-    if [ "$DEV_IMAGE_EXISTS" -eq 0 ]; then
-        echo "Dev image not found. Running ci-local.sh to build it..."
-        (cd "$PROJECT_DIR" && ./ci-local.sh)
-    fi
-fi
 
 # Fix SSH key permissions (macOS mounts may have overly permissive modes)
 SSH_DIR="$CONTAINER_HOME/.ssh"
@@ -185,18 +163,24 @@ mkdir -p "$DATA_DIR"
 
 if [ ! -f "$DATA_DIR/index.db" ]; then
     echo ""
-    echo "Downloading Coq search index (first run only)..."
-    INDEX_IMAGE="$REGISTRY_IMAGE"
-    if [ "$DEV" = true ]; then INDEX_IMAGE="poule:dev"; fi
-    if docker run --rm \
-        -v "$DATA_DIR:/data" \
-        --entrypoint sh \
-        "$INDEX_IMAGE" \
-        -c 'uv run --project /app python -m poule.cli download-index --output /data/index.db'; then
-        echo "Index downloaded successfully."
+    if [ -f "$PROJECT_DIR/index.db" ]; then
+        echo "Copying local index.db into data directory..."
+        cp "$PROJECT_DIR/index.db" "$DATA_DIR/index.db"
+        echo "Index copied successfully."
     else
-        echo "Warning: Index download failed. You can retry later from inside the container:"
-        echo "  uv run --project /app python -m poule.cli download-index --output ~/data/index.db"
+        echo "No local index.db found — downloading from latest GitHub release..."
+        # Mount src/ so the CLI module is available for the download command
+        if docker run --rm \
+            -v "$PROJECT_DIR/src:/app/src" \
+            -v "$DATA_DIR:/data" \
+            --entrypoint sh \
+            "$DEV_IMAGE" \
+            -c 'uv run --project /app python -m poule.cli download-index --output /data/index.db'; then
+            echo "Index downloaded successfully."
+        else
+            echo "Warning: Index download failed. You can retry later from inside the container:"
+            echo "  uv run --project /app python -m poule.cli download-index --output ~/data/index.db"
+        fi
     fi
     echo ""
 fi
@@ -226,55 +210,42 @@ alias claude='claude --dangerously-skip-permissions'
 EOF
 fi
 
-# Ensure Claude Code is installed in the persistent home (fast no-op if present)
-INIT_CMD='ensure-claude'
+# Ensure Claude Code is installed in the persistent home (fast no-op if present).
+# Export PATH first so the installer sees ~/.local/bin (zsh -c doesn't source .zshrc).
+INIT_CMD='export PATH="$HOME/.local/bin:$PATH"; ensure-claude'
 
-# Run container
-if [ "$DEV" = true ]; then
-    # Dev mode: live-mount src/ and test/ from project root, working dir /app
-    if [ ${#ARGS[@]} -eq 0 ]; then
-        echo "Starting Poule dev environment (live source mount)"
-        docker run -it --rm \
-            -v "$CURRENT_DIR/src:/app/src" \
-            -v "$CURRENT_DIR/test:/app/test" \
-            -v "$CONTAINER_HOME:/home/$HOST_USER" \
-            -v "$DATA_DIR:/data" \
-            -w /app \
-            -e ANTHROPIC_API_KEY \
-            -e TZ="${TZ:-UTC}" \
-            poule:dev \
-            zsh -c "$INIT_CMD; exec zsh"
-    else
-        docker run --rm \
-            -v "$CURRENT_DIR/src:/app/src" \
-            -v "$CURRENT_DIR/test:/app/test" \
-            -v "$CONTAINER_HOME:/home/$HOST_USER" \
-            -v "$DATA_DIR:/data" \
-            -w /app \
-            -e ANTHROPIC_API_KEY \
-            -e TZ="${TZ:-UTC}" \
-            poule:dev \
-            zsh -c "$INIT_CMD; ${ARGS[*]}"
-    fi
-elif [ ${#ARGS[@]} -eq 0 ]; then
-    echo "Starting Poule environment in: $CURRENT_DIR"
+# Run container with live-mounted source
+if [ ${#ARGS[@]} -eq 0 ]; then
+    echo "Starting Poule dev environment (live source mount)"
     docker run -it --rm \
-        -v "$CURRENT_DIR:$CURRENT_DIR" \
+        --user "$HOST_UID:$HOST_GID" \
+        -v "$PROJECT_DIR/src:/app/src" \
+        -v "$PROJECT_DIR/test:/app/test" \
+        -v "$PROJECT_DIR/examples:/app/examples" \
+        -v "$PROJECT_DIR/CLAUDE.md:/app/CLAUDE.md" \
+        -v "$PROJECT_DIR/README.md:/app/README.md" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
-        -w "$CURRENT_DIR" \
+        -w /app \
+        -e HOME="/home/$HOST_USER" \
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
-        "$REGISTRY_IMAGE" \
+        "$DEV_IMAGE" \
         zsh -c "$INIT_CMD; exec zsh"
 else
     docker run --rm \
-        -v "$CURRENT_DIR:$CURRENT_DIR" \
+        --user "$HOST_UID:$HOST_GID" \
+        -v "$PROJECT_DIR/src:/app/src" \
+        -v "$PROJECT_DIR/test:/app/test" \
+        -v "$PROJECT_DIR/examples:/app/examples" \
+        -v "$PROJECT_DIR/CLAUDE.md:/app/CLAUDE.md" \
+        -v "$PROJECT_DIR/README.md:/app/README.md" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
         -v "$DATA_DIR:/data" \
-        -w "$CURRENT_DIR" \
+        -w /app \
+        -e HOME="/home/$HOST_USER" \
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
-        "$REGISTRY_IMAGE" \
+        "$DEV_IMAGE" \
         zsh -c "$INIT_CMD; ${ARGS[*]}"
 fi

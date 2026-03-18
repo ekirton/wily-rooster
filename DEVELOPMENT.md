@@ -250,7 +250,7 @@ Two CI checks must pass before merging:
 
 | Check | Trigger | Command |
 |-------|---------|---------|
-| CI – Unit Tests | Automatic on push | — |
+| CI – Unit Tests | Automatic on every push | — |
 | CI – Build & Integration Tests | **Manual** | `gh workflow run build-and-test.yml --ref my-feature` |
 
 The build & integration workflow builds the Docker image and runs the Coq integration tests (`pytest -m requires_coq`). It is triggered manually to avoid burning CI minutes on every push — run it once the branch is ready for review.

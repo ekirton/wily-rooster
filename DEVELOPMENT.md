@@ -261,6 +261,12 @@ Once both checks are green, merge and delete the branch:
 gh pr merge <number> --merge --delete-branch
 ```
 
+To have GitHub merge automatically once checks pass, use the `--auto` flag:
+
+```bash
+gh pr merge <number> --auto --squash
+```
+
 ## Publishing Releases
 
 Prebuilt search indexes and neural model checkpoints are distributed via [GitHub Releases](https://github.com/ekirton/Poule/releases). Users can download them with `uv run python -m poule.cli download-index` instead of building from source.

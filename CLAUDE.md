@@ -25,3 +25,12 @@ Each layer answers "what" for the layer below and "how" for the layer above. A s
 * src/
 * test/
 * commands/ : slash command prompt files (agentic workflows)
+
+# Pull Request Process
+
+Do not push to a remote branch after every commit. Push only when the branch is ready to merge — the user makes many commits before a branch is ready. When ready:
+
+1. Push the branch and open a PR: `git push origin <branch> && gh pr create`
+2. Enable auto-merge so it merges once CI passes: `gh pr merge <number> --auto --squash`
+
+If the branch is out of date with `main`, rebase before pushing: `git rebase origin/main`.

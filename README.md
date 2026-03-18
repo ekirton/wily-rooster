@@ -38,10 +38,26 @@ Six Coq libraries are available as prebuilt indexes: **stdlib**, **MathComp**, *
 
 ### Visualization
 
-- Proof state, proof tree, dependency subgraph, and step-by-step sequence diagrams ([example](examples/proof-diagram.html))
+- Proof state, proof tree, dependency subgraph, and step-by-step sequence diagrams
 - Generated as Mermaid syntax; each visualization tool call writes a self-contained `proof-diagram.html` to your project directory
 - Open `proof-diagram.html` in your browser and bookmark it — refresh after each visualization to see the latest diagram
 - Poule always overwrites the same `proof-diagram.html` path — rename or copy the file if you want to keep a diagram
+
+**Example:** proof tree for `app_nil_r` (`forall (A : Type) (l : list A), l ++ [] = l`)
+
+```mermaid
+flowchart TD
+    s0g0["forall (A : Type) (l : list A), l ++ [] = l"]
+    s0g0 -->|"intros A l."| s1g0["l ++ [] = l"]
+    s1g0 -->|"induction l as [| h t IH]."| s2g0["[] ++ [] = []"]
+    s1g0 -->|"induction l as [| h t IH]."| s2g1["(h :: t) ++ [] = h :: t"]
+    s2g0 -->|"- simpl."| s3g0["[] = []"]
+    s3g0 -->|"reflexivity."| s4g0["(h :: t) ++ [] = h :: t"]
+    s4g0 -->|"- simpl."| s5g0["h :: t ++ [] = h :: t"]
+    s5g0 -->|"rewrite IH."| s6g0["h :: t = h :: t"]
+    s6g0 -->|"reflexivity."| s7g0["✓"]:::discharged
+    classDef discharged fill:#d4edda,stroke:#28a745,stroke-dasharray:5 5
+```
 
 ## Quick Start
 

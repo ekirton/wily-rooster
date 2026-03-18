@@ -258,6 +258,14 @@ async def trace_resolution(
         )
 
     if not root_nodes:
+        # If parser returned no nodes, check whether this is because there
+        # was no typeclass goal (no debug resolution lines at all) vs an
+        # actual parse failure (debug lines present but unparseable).
+        if "looking for" not in debug_output:
+            raise TypeclassError(
+                "NO_TYPECLASS_GOAL",
+                "The current goal does not involve typeclass resolution.",
+            )
         raise TypeclassError(
             "PARSE_ERROR",
             "Failed to parse typeclass debug output. Raw output is included in the response.",

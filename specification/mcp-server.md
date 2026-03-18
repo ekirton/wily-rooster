@@ -2,7 +2,7 @@
 
 Thin adapter between Claude Code, the retrieval pipeline, the proof session manager, the proof search engine, the fill admits orchestrator, and the Mermaid renderer — exposing search, proof interaction, proof search, and visualization tools via the Model Context Protocol.
 
-**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [proof-search-engine.md](../doc/architecture/proof-search-engine.md), [fill-admits-orchestrator.md](../doc/architecture/fill-admits-orchestrator.md), [mermaid-renderer.md](../doc/architecture/mermaid-renderer.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
+**Architecture**: [mcp-server.md](../doc/architecture/mcp-server.md), [proof-search-engine.md](../doc/architecture/proof-search-engine.md), [fill-admits-orchestrator.md](../doc/architecture/fill-admits-orchestrator.md), [mermaid-renderer.md](../doc/architecture/mermaid-renderer.md), [diagram-file-output.md](../doc/architecture/diagram-file-output.md), [component-boundaries.md](../doc/architecture/component-boundaries.md), [response-types.md](../doc/architecture/data-models/response-types.md), [proof-types.md](../doc/architecture/data-models/proof-types.md)
 
 ---
 
@@ -12,9 +12,9 @@ Define the MCP server that translates MCP tool calls into pipeline queries, sess
 
 ## 2. Scope
 
-**In scope**: 7 search tool handlers, 12 proof interaction tool handlers (11 P0 + 1 P1), 2 proof search tool handlers, 4 visualization tool handlers, input validation, error formatting, index state management, startup checks, response construction, proof state serialization, visualization dispatch.
+**In scope**: 7 search tool handlers, 12 proof interaction tool handlers (11 P0 + 1 P1), 2 proof search tool handlers, 4 visualization tool handlers, input validation, error formatting, index state management, startup checks, response construction, proof state serialization, visualization dispatch, diagram file output integration.
 
-**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), session state management (owned by proof-session), proof search algorithm (owned by proof-search-engine), admit location and orchestration (owned by fill-admits-orchestrator), proof type definitions (owned by data-models/proof-types), serialization format details (owned by proof-serialization), Mermaid diagram generation logic (owned by mermaid-renderer).
+**Out of scope**: Search logic (owned by pipeline/channels), storage management (owned by storage), Coq expression parsing (owned by pipeline), session state management (owned by proof-session), proof search algorithm (owned by proof-search-engine), admit location and orchestration (owned by fill-admits-orchestrator), proof type definitions (owned by data-models/proof-types), serialization format details (owned by proof-serialization), Mermaid diagram generation logic (owned by mermaid-renderer), HTML file writing logic (owned by diagram-file-output).
 
 ## 3. Definitions
 
@@ -192,6 +192,8 @@ All proof interaction tools delegate to the session manager. The MCP server does
 ### 4.4 Visualization Tool Signatures
 
 All visualization tools delegate diagram generation to the Mermaid renderer. The MCP server resolves data (from the session manager or search index) and passes it to the renderer. Visualization tools return Mermaid syntax text, not rendered images.
+
+When `diagram_dir` is configured (not None), each visualization handler also writes a self-contained HTML file to the project directory via `write_diagram_html` as a fire-and-forget side effect (see [diagram-file-output specification](diagram-file-output.md)). Exceptions from the file write are caught and logged at WARNING, not propagated to the MCP response.
 
 #### visualize_proof_state(session_id, step?, detail_level?)
 
@@ -599,8 +601,8 @@ Response:
 - JSON serialization via `dataclasses.asdict()` + `json.dumps()` for search response types.
 - Proof interaction responses use `serialize_*` functions from `poule.serialization.serialize`.
 - Proof interaction handler functions are `async` to match the session manager's async interface.
-- Visualization handler functions are `async` (session resolution is async); the renderer call itself is synchronous.
+- Visualization handler functions are `async` (session resolution is async); the renderer call itself is synchronous. When `diagram_dir` is set, handlers call `write_diagram_html` after rendering (fire-and-forget, exceptions caught).
 - Proof search handler functions are `async`. `handle_proof_search` delegates to `search_engine.proof_search()`. `handle_fill_admits` delegates to `orchestrator.fill_admits()`.
 - Package location: `src/poule/server/`.
 - Handler naming convention: `handle_<tool_name>` (e.g., `handle_open_proof_session`, `handle_visualize_proof_state`, `handle_proof_search`, `handle_fill_admits`).
-- Visualization handlers import from `poule.rendering.mermaid_renderer`.
+- Visualization handlers import from `poule.rendering.mermaid_renderer` and `poule.server.diagram_writer`.

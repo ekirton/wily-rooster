@@ -79,6 +79,7 @@ Cross-references:
 | R4-P1-3 | Support configurable diagram detail level: summary (goal count and top-level structure only), standard (goals and hypotheses), and detailed (full context with types expanded) |
 | R4-P1-4 | Dependency subgraph diagrams must support depth limiting to control diagram complexity for deeply nested dependency chains |
 | R4-P1-5 | Diagram layout must remain readable for proofs with up to 50 tactic steps and dependency graphs with up to 100 nodes |
+| R4-P1-6 | When a visualization MCP tool is called, the system must write a self-contained HTML file to the project directory that renders the generated Mermaid diagram(s) in a browser without requiring a running server or network connection to the MCP server |
 
 ### P2 — Nice to Have
 
@@ -99,9 +100,10 @@ Cross-references:
 - Proof tree visualization (tactic steps, subgoal structure)
 - Theorem dependency subgraph visualization
 - Step-by-step proof evolution diagrams
-- Rendering via the Mermaid Chart MCP service
+- Self-contained HTML diagram output written to the project directory
 
 **Out of scope:**
+- Rendering via the Mermaid Chart MCP service (optional, not required)
 - VS Code extension or Infoview panel integration
 - React widgets or custom frontend components
 - Real-time IDE proof state tracking (visualization is request-driven, not live)

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any
 
 from Poule.server.errors import (
@@ -15,6 +17,8 @@ from Poule.server.errors import (
     PROOF_INCOMPLETE,
 )
 from Poule.session.errors import SessionError
+
+logger = logging.getLogger(__name__)
 from Poule.server.validation import (
     validate_string,
     validate_limit,
@@ -355,7 +359,7 @@ async def handle_visualize_proof_state(
     session_id: str,
     session_manager: Any,
     renderer: Any,
-    broadcaster: Any = None,
+    diagram_dir: Any = None,
     step: int | None = None,
     detail_level: str | None = None,
 ) -> str:
@@ -381,15 +385,17 @@ async def handle_visualize_proof_state(
         return _format_json_error(exc.code, exc.message)
 
     mermaid = renderer.render_proof_state(state, dl)
-    if broadcaster is not None:
+    if diagram_dir is not None:
         try:
-            broadcaster.push_diagram(
-                tool="visualize_proof_state",
-                title=f"Proof State: {session_id} step {state.step_index}",
-                mermaid=mermaid,
+            from Poule.server.diagram_writer import write_diagram_html
+
+            write_diagram_html(
+                Path(diagram_dir) / "proof-diagram.html",
+                f"Proof State: {session_id} step {state.step_index}",
+                [{"mermaid": mermaid, "label": None}],
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write diagram HTML: %s", exc)
     return _format_json({"mermaid": mermaid, "step_index": state.step_index})
 
 
@@ -398,7 +404,7 @@ async def handle_visualize_proof_tree(
     session_id: str,
     session_manager: Any,
     renderer: Any,
-    broadcaster: Any = None,
+    diagram_dir: Any = None,
 ) -> str:
     """Handle visualize_proof_tree tool call.
 
@@ -422,15 +428,17 @@ async def handle_visualize_proof_tree(
         )
 
     mermaid = renderer.render_proof_tree(trace)
-    if broadcaster is not None:
+    if diagram_dir is not None:
         try:
-            broadcaster.push_diagram(
-                tool="visualize_proof_tree",
-                title=f"Proof Tree: {trace.proof_name}",
-                mermaid=mermaid,
+            from Poule.server.diagram_writer import write_diagram_html
+
+            write_diagram_html(
+                Path(diagram_dir) / "proof-diagram.html",
+                f"Proof Tree: {trace.proof_name}",
+                [{"mermaid": mermaid, "label": None}],
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write diagram HTML: %s", exc)
     return _format_json({"mermaid": mermaid, "total_steps": trace.total_steps})
 
 
@@ -439,7 +447,7 @@ async def handle_visualize_dependencies(
     name: str,
     search_index: Any,
     renderer: Any,
-    broadcaster: Any = None,
+    diagram_dir: Any = None,
     max_depth: int = 2,
     max_nodes: int = 50,
 ) -> str:
@@ -463,15 +471,17 @@ async def handle_visualize_dependencies(
         return _format_json_error(NOT_FOUND, f"Declaration {name} not found in the index.")
 
     result = renderer.render_dependencies(name, adjacency_list, max_depth=max_depth, max_nodes=max_nodes)
-    if broadcaster is not None:
+    if diagram_dir is not None:
         try:
-            broadcaster.push_diagram(
-                tool="visualize_dependencies",
-                title=f"Dependencies: {name}",
-                mermaid=result.mermaid,
+            from Poule.server.diagram_writer import write_diagram_html
+
+            write_diagram_html(
+                Path(diagram_dir) / "proof-diagram.html",
+                f"Dependencies: {name}",
+                [{"mermaid": result.mermaid, "label": None}],
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write diagram HTML: %s", exc)
     return _format_json({
         "mermaid": result.mermaid,
         "node_count": result.node_count,
@@ -517,7 +527,7 @@ async def handle_visualize_proof_sequence(
     session_id: str,
     session_manager: Any,
     renderer: Any,
-    broadcaster: Any = None,
+    diagram_dir: Any = None,
     detail_level: str | None = None,
 ) -> str:
     """Handle visualize_proof_sequence tool call.
@@ -545,16 +555,24 @@ async def handle_visualize_proof_sequence(
 
     entries = renderer.render_proof_sequence(trace, dl)
     diagrams = [_serialize(entry) for entry in entries]
-    if broadcaster is not None and entries:
+    if diagram_dir is not None and entries:
         try:
-            first = entries[0]
-            broadcaster.push_diagram(
-                tool="visualize_proof_sequence",
-                title=f"Proof Sequence: {session_id}",
-                mermaid=first.mermaid if hasattr(first, "mermaid") else "",
+            from Poule.server.diagram_writer import write_diagram_html
+
+            diagram_list = [
+                {
+                    "mermaid": e.mermaid if hasattr(e, "mermaid") else "",
+                    "label": f"Step {e.step_index}: {e.tactic}" if e.tactic else f"Step {e.step_index}: initial",
+                }
+                for e in entries
+            ]
+            write_diagram_html(
+                Path(diagram_dir) / "proof-diagram.html",
+                f"Proof Sequence: {session_id}",
+                diagram_list,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write diagram HTML: %s", exc)
     return _format_json({"diagrams": diagrams})
 
 

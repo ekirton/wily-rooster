@@ -172,3 +172,51 @@ Derived from [doc/requirements/proof-visualization-widgets.md](../proof-visualiz
 - GIVEN the same proof state WHEN the detailed level is requested THEN the diagram additionally expands type abbreviations and shows full local context
 
 **Traces to:** R4-P1-3
+
+---
+
+## Epic 5: Diagram File Output
+
+### 5.1 Write Rendered Diagram to Project Directory
+
+**As a** formalization developer using Claude Code in a container,
+**I want to** have visualization tools write an HTML file I can open in my browser,
+**so that** I can see rendered diagrams without configuring a separate viewer or server connection.
+
+**Priority:** P1
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN a call to `visualize_proof_tree` WHEN the tool returns THEN a file `proof-diagram.html` exists in the project directory containing valid HTML that renders the Mermaid diagram in a browser
+- GIVEN the HTML file is opened in a browser without network access to the container THEN the diagram renders (mermaid.js loaded from CDN, no SSE/server dependency)
+
+**Traces to:** R4-P1-6
+
+### 5.2 Multi-Diagram Sequence in Single File
+
+**As an** educator,
+**I want** `visualize_proof_sequence` to produce a single HTML file showing all proof steps,
+**so that** I can scroll through the full evolution in one page.
+
+**Priority:** P1
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN a proof trace with 6 tactic steps WHEN `visualize_proof_sequence` is called THEN the HTML file contains 7 rendered diagrams (initial + 6 steps) with step labels
+- GIVEN the HTML file WHEN opened in a browser THEN all diagrams render in order with their tactic labels visible
+
+**Traces to:** R4-P1-6, R4-P1-1
+
+### 5.3 Overwrite on Subsequent Calls
+
+**As a** developer,
+**I want** subsequent visualization calls to overwrite the same file,
+**so that** my project directory doesn't accumulate diagram files.
+
+**Priority:** P1
+**Stability:** Stable
+
+**Acceptance criteria:**
+- GIVEN a previous `proof-diagram.html` exists WHEN a new visualization tool is called THEN the file is overwritten with the new diagram
+
+**Traces to:** R4-P1-6

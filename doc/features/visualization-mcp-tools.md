@@ -28,10 +28,13 @@ All tools accept structured JSON input and return Mermaid diagram text as output
 
 ## Rendering Pipeline
 
-Visualization tools generate Mermaid syntax only — they do not render images themselves. Rendering to a visual diagram is a separate step handled by the Mermaid Chart MCP service or the client's own Mermaid renderer. This separation means:
+Visualization tools generate Mermaid syntax and return it as text in the MCP response. Each visualization tool also writes a self-contained HTML file (`proof-diagram.html`) to the project directory as a side effect, rendering the diagram(s) via client-side mermaid.js. This file replaces the previous SSE-based live diagram viewer. See [Diagram File Output](diagram-file-output.md) for the file output feature.
 
-- The visualization tools have no rendering dependencies (no headless browser, no Puppeteer, no network calls)
-- Any MCP client that can display Mermaid (or forward to the Mermaid Chart MCP) gets visualization for free
+This means:
+
+- The visualization tools have no server-side rendering dependencies (no headless browser, no Puppeteer, no SSE viewer)
+- Any MCP client that can display Mermaid gets visualization for free via the returned text
+- The HTML file provides a visual rendering channel without requiring a running server or network connection to the container
 - Diagram generation stays fast — it is string construction, not image rendering
 
 ## Design Rationale

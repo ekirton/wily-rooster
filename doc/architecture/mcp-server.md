@@ -175,8 +175,9 @@ Visualization tools delegate to the [Mermaid Renderer](mermaid-renderer.md) for 
 - Resolving `name` to dependency data via the search index (`find_related` with `uses`)
 - Passing resolved data and configuration to the renderer
 - Returning the renderer's Mermaid text in the response
+- Writing a self-contained HTML file to the project directory via `write_diagram_html` when `diagram_dir` is configured (fire-and-forget side effect; see [Diagram File Output](diagram-file-output.md))
 
-Visualization tools do **not** render images — they return Mermaid syntax text. Rendering to a visual image is the client's responsibility (e.g., via the Mermaid Chart MCP service).
+Visualization handlers accept `diagram_dir: Path | None`. When set, they write an HTML file containing the rendered diagram(s) as a side effect after generating Mermaid text. The HTML file replaces the previous SSE-based live diagram viewer (`/viewer` endpoint and `DiagramBroadcaster`), which has been removed. Visualization tools continue to return Mermaid syntax text in the MCP response.
 
 ## Proof Search Tool Signatures
 

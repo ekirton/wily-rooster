@@ -6,11 +6,13 @@ until the visualization handler modules exist.
 Spec: specification/mcp-server.md (§4.4 Visualization Tool Signatures, §4.5 Input Validation, §5.3 Visualization Errors)
 Architecture: doc/architecture/mcp-server.md (Visualization Tool Signatures)
 Renderer spec: specification/mermaid-renderer.md
+Diagram file output spec: specification/diagram-file-output.md (§5 Handler Integration)
 
 Import paths under test:
   poule.server.handlers  (handle_visualize_proof_state, etc.)
   poule.server.validation (validate_detail_level, validate_positive_int)
   poule.server.errors    (PROOF_INCOMPLETE, DIAGRAM_TRUNCATED)
+  poule.server.diagram_writer (write_diagram_html)
 """
 
 from __future__ import annotations
@@ -666,3 +668,257 @@ class TestVisualizeDependenciesIndexRequirement:
         )
         parsed = json.loads(result)
         assert "mermaid" in parsed
+
+
+# ===========================================================================
+# 8. Diagram File Output Integration (mcp-server.md §4.4, diagram-file-output.md §5)
+# ===========================================================================
+
+class TestDiagramDirProofState:
+    """Spec mcp-server.md §4.4 + diagram-file-output.md §5:
+    visualize_proof_state writes HTML when diagram_dir is set."""
+
+    async def test_writes_html_when_diagram_dir_set(self, tmp_path):
+        """§5: handler writes proof-diagram.html to diagram_dir."""
+        handle_vis_state, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_state(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        assert (tmp_path / "proof-diagram.html").exists()
+
+    async def test_skips_write_when_diagram_dir_none(self, tmp_path):
+        """§5: handler skips file write when diagram_dir is None."""
+        handle_vis_state, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_state(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=None,
+        )
+        assert not (tmp_path / "proof-diagram.html").exists()
+
+    async def test_write_error_does_not_propagate(self, tmp_path):
+        """§5: exceptions from file write are caught, not propagated to MCP response."""
+        handle_vis_state, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        # Use a nonexistent directory to trigger an error
+        bad_dir = tmp_path / "nonexistent"
+        result = await handle_vis_state(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=bad_dir,
+        )
+        parsed = json.loads(result)
+        # Should still return a successful visualization response
+        assert "mermaid" in parsed
+
+    async def test_html_contains_mermaid_text(self, tmp_path):
+        """§5: written HTML contains the diagram's Mermaid text."""
+        handle_vis_state, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_state(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        html = (tmp_path / "proof-diagram.html").read_text()
+        # The renderer returns "flowchart TD\n    n0[\"test\"]"
+        assert "flowchart TD" in html
+
+
+class TestDiagramDirProofTree:
+    """Spec mcp-server.md §4.4 + diagram-file-output.md §5:
+    visualize_proof_tree writes HTML when diagram_dir is set."""
+
+    async def test_writes_html_when_diagram_dir_set(self, tmp_path):
+        """§5: handler writes proof-diagram.html to diagram_dir."""
+        _, handle_vis_tree, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_tree(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        assert (tmp_path / "proof-diagram.html").exists()
+
+    async def test_skips_write_when_diagram_dir_none(self, tmp_path):
+        """§5: handler skips file write when diagram_dir is None."""
+        _, handle_vis_tree, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_tree(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=None,
+        )
+        assert not (tmp_path / "proof-diagram.html").exists()
+
+    async def test_write_error_does_not_propagate(self, tmp_path):
+        """§5: exceptions from file write are caught, not propagated to MCP response."""
+        _, handle_vis_tree, *_ = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        bad_dir = tmp_path / "nonexistent"
+        result = await handle_vis_tree(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=bad_dir,
+        )
+        parsed = json.loads(result)
+        assert "mermaid" in parsed
+
+    async def test_error_response_skips_write(self, tmp_path):
+        """§5: handler does not write HTML on error (incomplete proof)."""
+        _, handle_vis_tree, *_ = _import_handlers()
+        step0 = _make_trace_step(0, state=_make_proof_state(step_index=0))
+        step1 = _make_trace_step(1, tactic="intro", state=_make_proof_state(step_index=1))
+        trace = _make_proof_trace([step0, step1])
+        mgr = _make_mock_session_manager(extract_trace=trace)
+        renderer = _make_mock_renderer()
+        await handle_vis_tree(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        # PROOF_INCOMPLETE error — should not write file
+        assert not (tmp_path / "proof-diagram.html").exists()
+
+
+class TestDiagramDirDependencies:
+    """Spec mcp-server.md §4.4 + diagram-file-output.md §5:
+    visualize_dependencies writes HTML when diagram_dir is set."""
+
+    async def test_writes_html_when_diagram_dir_set(self, tmp_path):
+        """§5: handler writes proof-diagram.html to diagram_dir."""
+        *_, handle_vis_deps, _ = _import_handlers()
+        renderer = _make_mock_renderer()
+        index = _make_mock_search_index()
+        await handle_vis_deps(
+            name="Nat.add_comm",
+            search_index=index,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        assert (tmp_path / "proof-diagram.html").exists()
+
+    async def test_skips_write_when_diagram_dir_none(self, tmp_path):
+        """§5: handler skips file write when diagram_dir is None."""
+        *_, handle_vis_deps, _ = _import_handlers()
+        renderer = _make_mock_renderer()
+        index = _make_mock_search_index()
+        await handle_vis_deps(
+            name="Nat.add_comm",
+            search_index=index,
+            renderer=renderer,
+            diagram_dir=None,
+        )
+        assert not (tmp_path / "proof-diagram.html").exists()
+
+    async def test_write_error_does_not_propagate(self, tmp_path):
+        """§5: exceptions from file write are caught, not propagated to MCP response."""
+        *_, handle_vis_deps, _ = _import_handlers()
+        renderer = _make_mock_renderer()
+        index = _make_mock_search_index()
+        bad_dir = tmp_path / "nonexistent"
+        result = await handle_vis_deps(
+            name="Nat.add_comm",
+            search_index=index,
+            renderer=renderer,
+            diagram_dir=bad_dir,
+        )
+        parsed = json.loads(result)
+        assert "mermaid" in parsed
+
+
+class TestDiagramDirProofSequence:
+    """Spec mcp-server.md §4.4 + diagram-file-output.md §5:
+    visualize_proof_sequence writes HTML when diagram_dir is set."""
+
+    async def test_writes_html_when_diagram_dir_set(self, tmp_path):
+        """§5: handler writes proof-diagram.html to diagram_dir."""
+        *_, handle_vis_seq = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_seq(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        assert (tmp_path / "proof-diagram.html").exists()
+
+    async def test_skips_write_when_diagram_dir_none(self, tmp_path):
+        """§5: handler skips file write when diagram_dir is None."""
+        *_, handle_vis_seq = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        await handle_vis_seq(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=None,
+        )
+        assert not (tmp_path / "proof-diagram.html").exists()
+
+    async def test_write_error_does_not_propagate(self, tmp_path):
+        """§5: exceptions from file write are caught, not propagated to MCP response."""
+        *_, handle_vis_seq = _import_handlers()
+        mgr = _make_mock_session_manager()
+        renderer = _make_mock_renderer()
+        bad_dir = tmp_path / "nonexistent"
+        result = await handle_vis_seq(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=bad_dir,
+        )
+        parsed = json.loads(result)
+        assert "diagrams" in parsed
+
+    async def test_html_contains_all_sequence_diagrams(self, tmp_path):
+        """§5 + diagram-file-output §4.4: sequence handler writes multi-diagram HTML."""
+        *_, handle_vis_seq = _import_handlers()
+        _, _, SequenceEntry = _import_renderer_types()
+        renderer = MagicMock()
+        entries = [
+            SequenceEntry(step_index=0, tactic=None, mermaid="flowchart TD\n    INIT"),
+            SequenceEntry(step_index=1, tactic="intro n", mermaid="flowchart TD\n    STEP1"),
+            SequenceEntry(step_index=2, tactic="auto", mermaid="flowchart TD\n    STEP2"),
+        ]
+        renderer.render_proof_sequence = MagicMock(return_value=entries)
+
+        step0 = _make_trace_step(0, state=_make_proof_state(step_index=0))
+        step1 = _make_trace_step(1, tactic="intro n", state=_make_proof_state(step_index=1))
+        step2 = _make_trace_step(2, tactic="auto", state=_make_proof_state(
+            step_index=2, is_complete=True, goals=[], focused_goal_index=None,
+        ))
+        trace = _make_proof_trace([step0, step1, step2])
+        mgr = _make_mock_session_manager(extract_trace=trace)
+
+        await handle_vis_seq(
+            session_id="abc",
+            session_manager=mgr,
+            renderer=renderer,
+            diagram_dir=tmp_path,
+        )
+        html = (tmp_path / "proof-diagram.html").read_text()
+        # All three diagrams' mermaid text should be present in the HTML
+        assert "INIT" in html
+        assert "STEP1" in html
+        assert "STEP2" in html

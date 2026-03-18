@@ -8,12 +8,14 @@ import pickle
 import subprocess
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from .backends.coqlsp_backend import CoqLspBackend
 from .errors import ExtractionError
 from .kind_mapping import map_kind
+from .version_detection import detect_mathcomp_version
 
 logger = logging.getLogger(__name__)
 
@@ -486,8 +488,8 @@ def run_extraction(
         writer.write_metadata(
             schema_version="1",
             coq_version=coq_version,
-            mathcomp_version=None,
-            created_at=None,
+            mathcomp_version=detect_mathcomp_version(),
+            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
 
         # Finalize

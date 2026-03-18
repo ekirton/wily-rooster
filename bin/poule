@@ -1,34 +1,24 @@
 #!/bin/bash
 
 # Poule Launcher
-# Usage: poule [--rebuild|--rebuild-all] [--no-auto-update] [--dev] [command]
+# Usage: poule [--pull] [--no-pull] [--dev] [command]
 # Runs Claude Code in a Docker container with the Coq toolchain and Poule MCP server
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
+REGISTRY_IMAGE="ghcr.io/ekirton/poule"
 
 # Parse arguments
-REBUILD=false
-REBUILD_ALL=false
-NO_AUTO_UPDATE=false
+PULL=false
 DEV=false
 ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --rebuild)
-            REBUILD=true
-            shift
-            ;;
-        --rebuild-all)
-            REBUILD=true
-            REBUILD_ALL=true
-            shift
-            ;;
-        --no-auto-update)
-            NO_AUTO_UPDATE=true
+        --pull)
+            PULL=true
             shift
             ;;
         --dev)
@@ -41,16 +31,15 @@ while [[ $# -gt 0 ]]; do
             echo "Run Claude Code in a container with Coq and the Poule MCP server."
             echo ""
             echo "OPTIONS:"
-            echo "  --rebuild          Update Claude CLI and rebuild (uses cache)"
-            echo "  --rebuild-all      Full rebuild from scratch (no cache)"
-            echo "  --no-auto-update   Skip automatic rebuild when new version is detected"
+            echo "  --pull             Force pull latest image from registry"
             echo "  --dev              Live-mount src/ and test/ (run from poule project root)"
+            echo "                     Requires poule:dev image built by ./ci-local.sh"
             echo "  --help, -h         Show this help message"
             echo ""
             echo "EXAMPLES:"
             echo "  poule                         Start interactive shell"
             echo "  poule claude                   Run Claude Code directly"
-            echo "  poule --rebuild                Update Claude CLI"
+            echo "  poule --pull                   Force pull latest image"
             echo "  poule coqc --version           Run a command in the container"
             echo "  poule --dev uv run pytest      Run tests with live-mounted source"
             exit 0
@@ -96,101 +85,21 @@ if [ ! -d "$CONTAINER_HOME" ]; then
 fi
 chmod 700 "$CONTAINER_HOME"
 
-# Resolve latest Claude Code version from npm (used for builds and update checks)
-CLAUDE_LATEST=""
-if command -v npm >/dev/null 2>&1; then
-    CLAUDE_LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo "")
-fi
-
-# Determine if a build is needed (skipped in --dev mode)
-IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "poule:latest" || echo "0")
-NEED_BUILD=false
-BUILD_REASON=""
-DEFERRED_UPDATE=false
-
+# Normal mode: pull if image is missing or --pull requested
 if [ "$DEV" != true ]; then
-    if [ "$IMAGE_EXISTS" -eq 0 ]; then
-        NEED_BUILD=true
-        BUILD_REASON="initial"
-    elif [ "$REBUILD" = true ]; then
-        NEED_BUILD=true
-        BUILD_REASON="requested"
-    elif [ -n "$CLAUDE_LATEST" ] && [ "$NO_AUTO_UPDATE" != true ]; then
-        INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null)
-        if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "$CLAUDE_LATEST" ] && [ "$INSTALLED" != "latest" ]; then
-            DEFERRED_UPDATE=true
-        fi
+    IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "ghcr.io/ekirton/poule" || echo "0")
+    if [ "$IMAGE_EXISTS" -eq 0 ] || [ "$PULL" = true ]; then
+        docker pull "$REGISTRY_IMAGE"
     fi
 fi
 
-if [ "$NEED_BUILD" = true ]; then
-    BUILD_ARGS=(
-        --build-arg HOST_UID="$HOST_UID"
-        --build-arg HOST_GID="$HOST_GID"
-        --build-arg HOST_USER="$HOST_USER"
-        --build-arg HOST_GROUP="$HOST_GROUP"
-        --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST:-latest}"
-    )
-
-    if [ "$REBUILD_ALL" = true ]; then
-        echo "Full rebuild (no cache) with user=$HOST_USER($HOST_UID)..."
-        BUILD_ARGS+=(--no-cache)
-    elif [ "$REBUILD" = true ]; then
-        echo "Rebuilding Poule image with user=$HOST_USER($HOST_UID)..."
-        BUILD_ARGS+=(--build-arg CACHEBUST_CLAUDE="$(date +%s)")
-    else
-        echo "Building Poule container image with user=$HOST_USER($HOST_UID)..."
-    fi
-
-    if ! docker build -t poule "${BUILD_ARGS[@]}" "$PROJECT_DIR"; then
-        echo "Error: Build failed."
-        exit 1
-    fi
-fi
-
-# Dev mode: build/use poule:dev image (app-deps stage, no source baked in)
+# Dev mode: ensure poule:dev image exists, building it if needed
 if [ "$DEV" = true ]; then
     DEV_IMAGE_EXISTS=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -c "poule:dev" || echo "0")
-    DEV_NEED_BUILD=false
-
     if [ "$DEV_IMAGE_EXISTS" -eq 0 ]; then
-        DEV_NEED_BUILD=true
-    elif [ "$REBUILD" = true ]; then
-        DEV_NEED_BUILD=true
+        echo "Dev image not found. Running ci-local.sh to build it..."
+        (cd "$PROJECT_DIR" && ./ci-local.sh)
     fi
-
-    if [ "$DEV_NEED_BUILD" = true ]; then
-        echo "Building Poule dev image (app-deps stage)..."
-        DEV_BUILD_ARGS=(
-            --target app-deps
-            --build-arg HOST_UID="$HOST_UID"
-            --build-arg HOST_GID="$HOST_GID"
-            --build-arg HOST_USER="$HOST_USER"
-            --build-arg HOST_GROUP="$HOST_GROUP"
-            --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST:-latest}"
-        )
-        if [ "$REBUILD_ALL" = true ]; then
-            DEV_BUILD_ARGS+=(--no-cache)
-        fi
-        if ! docker build -t poule:dev "${DEV_BUILD_ARGS[@]}" "$PROJECT_DIR"; then
-            echo "Error: Dev image build failed."
-            exit 1
-        fi
-    fi
-fi
-
-# Display Claude Code version info (normal mode only)
-INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null || echo "")
-if [ "$DEV" != true ] && [ -n "$CLAUDE_LATEST" ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
-    if [ "$INSTALLED" = "$CLAUDE_LATEST" ]; then
-        echo "Claude Code v${INSTALLED} (latest)"
-    elif [ "$DEFERRED_UPDATE" = true ]; then
-        printf "Claude Code v%s (\033[1;33mv%s available — will rebuild on exit\033[0m)\n" "$INSTALLED" "$CLAUDE_LATEST"
-    else
-        echo "Claude Code v${INSTALLED} (v${CLAUDE_LATEST} available — run with --rebuild to update)"
-    fi
-elif [ "$DEV" != true ] && [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ]; then
-    echo "Claude Code v${INSTALLED}"
 fi
 
 # Fix SSH key permissions (macOS mounts may have overly permissive modes)
@@ -280,7 +189,7 @@ if [ ! -f "$DATA_DIR/index.db" ]; then
     if docker run --rm \
         -v "$DATA_DIR:/data" \
         --entrypoint sh \
-        poule \
+        "$REGISTRY_IMAGE" \
         -c 'uv run --project /app python -m poule.cli download-index --output /data/index.db'; then
         echo "Index downloaded successfully."
     else
@@ -315,8 +224,8 @@ alias claude='claude --dangerously-skip-permissions'
 EOF
 fi
 
-# Claude symlink restoration command (needed because home mount hides build-time symlinks)
-INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
+# Ensure Claude Code is installed in the persistent home (fast no-op if present)
+INIT_CMD='ensure-claude'
 
 # Run container
 if [ "$DEV" = true ]; then
@@ -354,7 +263,7 @@ elif [ ${#ARGS[@]} -eq 0 ]; then
         -w "$CURRENT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
-        poule \
+        "$REGISTRY_IMAGE" \
         zsh -c "$INIT_CMD; exec zsh"
 else
     docker run --rm \
@@ -364,57 +273,6 @@ else
         -w "$CURRENT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e TZ="${TZ:-UTC}" \
-        poule \
+        "$REGISTRY_IMAGE" \
         zsh -c "$INIT_CMD; ${ARGS[*]}"
-fi
-
-# Deferred rebuild: update the container image for next launch
-if [ "$DEFERRED_UPDATE" = true ]; then
-    CURRENT_VERSION=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' poule:latest 2>/dev/null)
-    if [ "$CURRENT_VERSION" = "$CLAUDE_LATEST" ]; then
-        echo "Claude Code v${CLAUDE_LATEST} already updated."
-    else
-        LOCK_DIR="$CONTAINER_HOME/.poule-rebuild.lock"
-
-        acquire_rebuild_lock() {
-            if mkdir "$LOCK_DIR" 2>/dev/null; then
-                echo $$ > "$LOCK_DIR/pid"
-                return 0
-            fi
-            if [ -f "$LOCK_DIR/pid" ]; then
-                LOCK_PID=$(cat "$LOCK_DIR/pid" 2>/dev/null)
-                if [ -n "$LOCK_PID" ] && ! kill -0 "$LOCK_PID" 2>/dev/null; then
-                    rm -rf "$LOCK_DIR"
-                    if mkdir "$LOCK_DIR" 2>/dev/null; then
-                        echo $$ > "$LOCK_DIR/pid"
-                        return 0
-                    fi
-                fi
-            fi
-            return 1
-        }
-
-        if acquire_rebuild_lock; then
-            trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM
-            echo ""
-            echo "Updating Claude Code: v${INSTALLED} → v${CLAUDE_LATEST}..."
-            BUILD_ARGS=(
-                --build-arg HOST_UID="$HOST_UID"
-                --build-arg HOST_GID="$HOST_GID"
-                --build-arg HOST_USER="$HOST_USER"
-                --build-arg HOST_GROUP="$HOST_GROUP"
-                --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST}"
-                --build-arg CACHEBUST_CLAUDE="$(date +%s)"
-            )
-            if docker build -t poule "${BUILD_ARGS[@]}" "$PROJECT_DIR"; then
-                echo "Claude Code v${CLAUDE_LATEST} ready for next launch."
-            else
-                echo "Warning: Update failed. Will retry on next launch."
-            fi
-            rm -rf "$LOCK_DIR"
-            trap - EXIT INT TERM
-        else
-            echo "Another session is already rebuilding. Skipping."
-        fi
-    fi
 fi

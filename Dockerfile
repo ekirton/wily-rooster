@@ -105,6 +105,10 @@ COPY pyproject.toml uv.lock ./
 COPY docker/poule-mcp /usr/local/bin/poule-mcp
 RUN chmod +x /usr/local/bin/poule-mcp
 
+# Install Claude Code bootstrap script (installs into persistent home at runtime)
+COPY docker/ensure-claude /usr/local/bin/ensure-claude
+RUN chmod +x /usr/local/bin/ensure-claude
+
 # Create venv as the app user so it's writable when source is installed later
 RUN chown -R ${HOST_UID}:${HOST_GID} /app
 USER ${HOST_USER}
@@ -112,8 +116,9 @@ RUN uv sync --frozen --group dev
 USER root
 
 # ============================================================================
-# Stage 3: runtime — Application code + Claude Code
+# Stage 3: runtime — Application code
 # Rebuilds on every source change (fast — just file copies).
+# Claude Code is installed at runtime via ensure-claude into the persistent home.
 # ============================================================================
 FROM app-deps AS runtime
 
@@ -121,19 +126,6 @@ COPY --chown=${HOST_UID}:${HOST_GID} src/ src/
 COPY --chown=${HOST_UID}:${HOST_GID} test/ test/
 COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
 COPY --chown=${HOST_UID}:${HOST_GID} CLAUDE.md README.md ./
-
-# Cache-bust: changing this arg forces re-download of Claude Code
-ARG CACHEBUST_CLAUDE=0
-ARG CLAUDE_CODE_VERSION=latest
-
-# Install Claude Code as user, then move to /opt
-USER ${HOST_USER}
-RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
-
-USER root
-RUN mv /home/${HOST_USER}/.local/share/claude /opt/claude && \
-    ln -sf "$(ls -d /opt/claude/versions/* | head -1)" /usr/local/bin/claude && \
-    chown -R ${HOST_USER}:${HOST_GROUP} /opt/claude
 
 USER ${HOST_USER}
 
@@ -158,9 +150,6 @@ export PATH="/opt/opam/coq/bin:$HOME/.local/bin:$PATH"
 export UV_LINK_MODE="copy"
 alias claude='claude --dangerously-skip-permissions'
 ZSHEOF
-
-# Record installed Claude Code version in image metadata
-LABEL claude.code.version=${CLAUDE_CODE_VERSION}
 
 VOLUME ["/data"]
 ENV SHELL=/bin/zsh

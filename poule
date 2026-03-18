@@ -178,8 +178,8 @@ fi
 # ── Run ───────────────────────────────────────────────────────────────────────
 HOST_USER=$(id -un)
 
-# INIT_CMD is used for pass-through commands that bypass the container entrypoint.
-INIT_CMD='mkdir -p ~/.local/bin ~/.local/share && ln -sf "$(ls -d /opt/claude/versions/* | head -1)" ~/.local/bin/claude && ln -sf /opt/claude ~/.local/share/claude'
+# Ensure Claude Code is installed for pass-through commands (fast no-op if present).
+INIT_CMD='ensure-claude'
 
 echo "Starting Poule in: $PROJECT_DIR"
 

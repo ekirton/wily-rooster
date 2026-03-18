@@ -7,9 +7,8 @@
 - [Docker](https://docs.docker.com/get-docker/)
 - [Git](https://git-scm.com/)
 - An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
-- [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) (for Claude Code version detection)
 
-No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, Python environment, and Claude Code.
+No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, and Python environment. Claude Code is installed automatically into the persistent home directory on first run and auto-updates on each launch.
 
 ### Clone and build
 
@@ -27,7 +26,7 @@ Add the `bin/` directory to your PATH:
 export PATH="/path/to/poule/bin:$PATH"
 ```
 
-The first time you run `poule`, it builds the Docker image automatically.
+The first time you run `poule`, it pulls the Docker image from the registry automatically.
 
 ### Developer workflow
 
@@ -47,11 +46,10 @@ poule coqc --version                        # Run a Coq command in the container
 ```
 
 The launcher manages:
-- Image builds with proper host user mapping
+- Image pulls with proper host user mapping
 - Persistent home directory at `~/poule-home/`
 - Claude Code MCP server auto-configuration
 - Search index download on first run
-- Automatic Claude Code updates (deferred to session exit)
 
 ### MCP server lifecycle
 
@@ -90,9 +88,10 @@ Environment variables to override defaults:
 ### Updating
 
 ```bash
-poule --rebuild              # Update Claude CLI (uses cache)
-poule --rebuild-all          # Full rebuild from scratch
+poule --pull                 # Force pull latest base image from registry
 ```
+
+Claude Code auto-updates on every container launch (via `ensure-claude` in the entrypoint). The `--pull` flag updates the base image (Coq toolchain, Python deps, Poule application code).
 
 To download a newer search index:
 

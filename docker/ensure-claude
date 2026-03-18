@@ -1,0 +1,15 @@
+#!/bin/bash
+# Ensure Claude Code is installed in the persistent home directory.
+# Usage:
+#   ensure-claude            Install if missing (fast no-op if present)
+#   ensure-claude --update   Install if missing, update if outdated
+set -euo pipefail
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo "Installing Claude Code (first run)..."
+    curl -fsSL https://claude.ai/install.sh | bash
+elif [ "${1:-}" = "--update" ]; then
+    echo "Checking for Claude Code updates..."
+    curl -fsSL https://claude.ai/install.sh | bash 2>/dev/null || \
+        echo "Update check failed, using existing installation."
+fi

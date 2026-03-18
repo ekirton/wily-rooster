@@ -23,6 +23,13 @@ if [ -d "$COMMANDS_SRC" ]; then
     done
 fi
 
+# ── MCP config ──────────────────────────────────────────────────────────
+# Claude Code discovers MCP servers via .mcp.json in the working directory.
+# Copy the baked-in config so it's present regardless of where Claude runs.
+if [ ! -f .mcp.json ] && [ -f /poule/.mcp.json ]; then
+    cp /poule/.mcp.json .mcp.json
+fi
+
 # ── MCP server lifecycle ─────────────────────────────────────────────────────
 # Start the MCP server and ensure it stops when the container exits.
 cleanup() {

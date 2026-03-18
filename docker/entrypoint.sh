@@ -30,6 +30,11 @@ if [ ! -f .mcp.json ] && [ -f /poule/.mcp.json ]; then
     cp /poule/.mcp.json .mcp.json
 fi
 
+# ── Index startup check ──────────────────────────────────────────────────────
+# Compare the user's library config against the current index.db.
+# Downloads missing per-library indexes and rebuilds index.db if needed.
+uv run --project /poule python -m Poule.cli.startup_check || true
+
 # ── MCP server lifecycle ─────────────────────────────────────────────────────
 # Start the MCP server and ensure it stops when the container exits.
 cleanup() {

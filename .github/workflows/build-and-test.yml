@@ -1,11 +1,10 @@
 name: CI – Build & Integration Tests
 
 on:
-  # Automatic on main
   push:
     branches: [main]
-  # Manual trigger on PR branches (via Actions tab or `gh workflow run`)
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/poule
@@ -44,28 +43,3 @@ jobs:
           docker run --rm --entrypoint uv \
             ${{ env.IMAGE }}:sha-${{ github.sha }} \
             run pytest -m requires_coq -v
-
-  # Report commit status so branch protection can require this workflow
-  report-status:
-    runs-on: ubuntu-latest
-    needs: [build-and-integration]
-    if: always() && github.event_name == 'workflow_dispatch'
-    permissions:
-      statuses: write
-    steps:
-      - name: Report status
-        run: |
-          if [ "${{ needs.build-and-integration.result }}" = "success" ]; then
-            STATE=success
-            DESC="Build and integration tests passed"
-          else
-            STATE=failure
-            DESC="Build or integration tests failed"
-          fi
-          gh api repos/${{ github.repository }}/statuses/${{ github.sha }} \
-            -f state="$STATE" \
-            -f context="CI – Build & Integration Tests" \
-            -f description="$DESC" \
-            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

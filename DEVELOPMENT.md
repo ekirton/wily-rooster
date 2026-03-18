@@ -13,7 +13,7 @@ No local Coq, Python, or opam installation is needed. All development happens in
 ### Clone and build
 
 ```bash
-git clone https://github.com/ekirton/poule.git
+git clone https://github.com/ekirton/Poule.git
 cd poule
 ```
 
@@ -31,7 +31,7 @@ There are two launchers:
 | Script | Image | Mount | Purpose |
 |--------|-------|-------|---------|
 | `poule-dev` | `poule:dev` (local build) | Project root at `/poule` | Development — live source edits |
-| `poule` | `ghcr.io/ekirton/poule` (registry) | Project dir at host path | End-user — baked-in source |
+| `poule` | `ghcr.io/ekirton/Poule` (registry) | Project dir at host path | End-user — baked-in source |
 
 ### Developer workflow
 
@@ -248,12 +248,12 @@ gh pr create
 
 Two CI checks must pass before merging:
 
-| Check | Trigger | Command |
-|-------|---------|---------|
-| CI – Unit Tests | Automatic on every push | — |
-| CI – Build & Integration Tests | **Manual** | `gh workflow run build-and-test.yml --ref my-feature` |
+| Check | Trigger |
+|-------|---------|
+| CI – Unit Tests | Automatic on every push |
+| CI – Build & Integration Tests | Automatic on push to main and PRs targeting main |
 
-The build & integration workflow builds the Docker image and runs the Coq integration tests (`pytest -m requires_coq`). It is triggered manually to avoid burning CI minutes on every push — run it once the branch is ready for review.
+The build & integration workflow builds the Docker image and runs the Coq integration tests (`pytest -m requires_coq`).
 
 Once both checks are green, merge and delete the branch:
 
@@ -263,7 +263,7 @@ gh pr merge <number> --merge --delete-branch
 
 ## Publishing Releases
 
-Prebuilt search indexes and neural model checkpoints are distributed via [GitHub Releases](https://github.com/ekirton/poule/releases). Users can download them with `uv run python -m poule.cli download-index` instead of building from source.
+Prebuilt search indexes and neural model checkpoints are distributed via [GitHub Releases](https://github.com/ekirton/Poule/releases). Users can download them with `uv run python -m poule.cli download-index` instead of building from source.
 
 ### When to publish
 

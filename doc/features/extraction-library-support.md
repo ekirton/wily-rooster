@@ -17,9 +17,13 @@ Three tiers of library support, reflecting increasing extraction difficulty:
 **Tier 0 (P0): Controlled, high-confidence**
 - Coq standard library: ≥ 95% extraction success rate
 - MathComp: ≥ 90% extraction success rate
+- stdpp: ≥ 90% extraction success rate
+- Flocq: ≥ 95% extraction success rate
+- Coquelicot: ≥ 95% extraction success rate
+- CoqInterval: ≥ 90% extraction success rate
 
 **Tier 1 (P1): Validated opam-installable projects**
-- Standard-Ltac projects (e.g., Flocq, stdpp): validated extraction, success rate reported
+- Standard-Ltac projects beyond the Tier 0 set: validated extraction, success rate reported
 - ssreflect-based projects (e.g., MathComp satellites): validated extraction, success rate reported
 - The extraction tool accepts arbitrary opam-installable projects; Tier 1 projects are those where extraction has been validated
 
@@ -34,9 +38,9 @@ Three tiers of library support, reflecting increasing extraction difficulty:
 
 MathComp's ssreflect tactics interact with proof states differently than standard Ltac — goals are transformed through view application, rewriting chains, and case analysis combinators rather than discrete `apply`/`rewrite` steps. Requiring 95% coverage on MathComp from day one would block delivery of the standard library pipeline. The 90% target for MathComp acknowledges that ssreflect proofs are extractable but some edge cases (deeply chained views, custom canonical structure resolution) may require iterative improvement.
 
-### Why stdlib and MathComp as Tier 0
+### Why these six libraries as Tier 0
 
-These two libraries provide the largest volume of high-quality proofs with the most predictable tactic usage. The standard library covers foundational mathematics (arithmetic, logic, lists, sets). MathComp covers algebra, group theory, and combinatorics. Together they provide a diverse training corpus while remaining within well-understood tactic dialects. They are also the libraries most Coq projects depend on, so their theorems appear as premises in downstream proofs.
+These two libraries provide the largest volume of high-quality proofs with the most predictable tactic usage. The standard library covers foundational mathematics (arithmetic, logic, lists, sets). MathComp covers algebra, group theory, and combinatorics. Together they provide a diverse training corpus while remaining within well-understood tactic dialects. They are also the libraries most Coq projects depend on, so their theorems appear as premises in downstream proofs. The four additional libraries (stdpp, Flocq, Coquelicot, CoqInterval) are all standard-Ltac compatible, actively maintained, in the Rocq Platform, and extractable without special processing. They form coherent dependency chains — the numerical analysis stack (Flocq, Coquelicot, CoqInterval) and the general-purpose extension (stdpp) — and are widely used as foundations for downstream projects.
 
 ### Why Tier 2 accepts reduced premise granularity
 

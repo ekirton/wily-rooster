@@ -281,7 +281,7 @@ The Neural Training Pipeline is a batch-mode component invoked via CLI. It reads
 | Direction | Read-only on startup |
 | Purpose | Schema version check, library version check |
 | Phase 1 behavior | Validates `schema_version` only; library versions stored for informational purposes. Schema mismatch → `INDEX_VERSION_MISMATCH` error directing user to re-index manually. |
-| Phase 2 behavior | Additionally validates `coq_version` and `mathcomp_version` against installed versions; mismatch → `INDEX_VERSION_MISMATCH` error. |
+| Phase 2 behavior | Additionally validates `coq_version` and `library_versions` against installed versions; mismatch → `INDEX_VERSION_MISMATCH` error. |
 
 ### Retrieval Pipeline → Neural Retrieval Channel (optional)
 

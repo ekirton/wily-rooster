@@ -8,11 +8,11 @@ Download and integrity verification of prebuilt search indexes and neural model 
 
 ## 1. Purpose
 
-Define the download client for prebuilt index databases and model checkpoints: release discovery, asset download with progress reporting, integrity verification, and platform-specific file placement.
+Define the download client for prebuilt index databases and model checkpoints: release discovery, per-library asset download with progress reporting, integrity verification, index merging, and library configuration.
 
 ## 2. Scope
 
-**In scope**: `download-index` CLI subcommand, GitHub Releases API integration, manifest parsing, SHA-256 checksum verification, atomic file placement, platform data directory resolution, publish script behavior.
+**In scope**: `download-index` CLI subcommand, GitHub Releases API integration, manifest parsing, SHA-256 checksum verification, atomic file placement, per-library index management, index merging, library configuration, publish script behavior.
 
 **Out of scope**: Index creation (owned by extraction), storage schema (owned by storage), neural encoder interface (owned by neural-retrieval), MCP server configuration (owned by mcp-server).
 
@@ -23,6 +23,10 @@ Define the download client for prebuilt index databases and model checkpoints: r
 | Release | A GitHub Release tagged with the `index-v` prefix, containing index and manifest assets |
 | Manifest | A JSON file (`manifest.json`) in each release containing version metadata and SHA-256 checksums |
 | Data directory | The platform-specific directory for application data (`~/Library/Application Support/poule/` on macOS, `~/.local/share/poule/` on Linux) |
+| Libraries directory | The host directory storing per-library indexes, merged index, and configuration file (default `~/poule-libraries/`, overridable via `POULE_LIBRARIES_PATH`) |
+| Configuration file | A TOML file (`config.toml`) in the libraries directory specifying which libraries to include in the search index |
+| Per-library index | A SQLite database containing declarations from a single Coq library, named `index-{library}.db` |
+| Merged index | A single SQLite database combining declarations from all configured per-library indexes |
 
 ## 4. Behavioral Requirements
 
@@ -38,7 +42,36 @@ Define the download client for prebuilt index databases and model checkpoints: r
 - REQUIRES: Nothing.
 - ENSURES: Returns `get_data_dir() / "models"`. Does not create the directory.
 
-### 4.2 Release Discovery
+### 4.2 Configuration
+
+#### load_config(libraries_dir)
+
+- REQUIRES: `libraries_dir` is a valid directory path (may not exist yet).
+- ENSURES: If `libraries_dir / "config.toml"` exists and contains a valid `[index]` section with a `libraries` list, returns the list of library identifiers. If the file does not exist, returns `["stdlib"]`. If the file exists but is malformed or contains unknown library identifiers, raises an error listing valid identifiers. If the `libraries` list is empty, raises an error indicating at least one library must be selected.
+- MAINTAINS: The set of valid library identifiers is: `stdlib`, `mathcomp`, `stdpp`, `flocq`, `coquelicot`, `coqinterval`.
+
+> **Given** `config.toml` contains `[index]\nlibraries = ["stdlib", "mathcomp"]`
+> **When** `load_config` is called
+> **Then** returns `["stdlib", "mathcomp"]`
+
+> **Given** no `config.toml` exists in the libraries directory
+> **When** `load_config` is called
+> **Then** returns `["stdlib"]`
+
+> **Given** `config.toml` contains `libraries = ["stdlib", "unknown"]`
+> **When** `load_config` is called
+> **Then** raises error: `"Unknown library 'unknown'. Valid libraries: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval"`
+
+> **Given** `config.toml` contains `libraries = []`
+> **When** `load_config` is called
+> **Then** raises error: `"At least one library must be selected."`
+
+#### get_libraries_dir()
+
+- REQUIRES: Nothing.
+- ENSURES: If `POULE_LIBRARIES_PATH` environment variable is set, returns its value as a Path. Otherwise returns `Path.home() / "poule-libraries"`.
+
+### 4.3 Release Discovery
 
 #### find_latest_release()
 
@@ -55,15 +88,15 @@ Accept: application/vnd.github+json
 
 No authentication is required (public repository). Unauthenticated rate limit: 60 requests/hour.
 
-> **Given** the repository has releases tagged `index-v1-coq8.19-mc2.2.0` and `index-v1-coq8.20-mc2.3.0`
+> **Given** the repository has releases tagged `index-v1-coq8.19` and `index-v1-coq8.20`
 > **When** `find_latest_release()` is called
-> **Then** returns the release with tag `index-v1-coq8.20-mc2.3.0` (most recent)
+> **Then** returns the release with tag `index-v1-coq8.20` (most recent)
 
 > **Given** the repository has no releases with `index-v` prefix
 > **When** `find_latest_release()` is called
 > **Then** raises error: `"No index release found on GitHub."`
 
-### 4.3 Manifest
+### 4.4 Manifest
 
 The manifest is a JSON object with the following schema:
 
@@ -71,23 +104,29 @@ The manifest is a JSON object with the following schema:
 |-------|------|----------|-------------|
 | `schema_version` | string | Yes | Index schema version |
 | `coq_version` | string | Yes | Coq version used during extraction |
-| `mathcomp_version` | string | Yes | MathComp version used during extraction |
-| `index_db_sha256` | string | Yes | Hex-encoded SHA-256 digest of `index.db` |
-| `onnx_model_sha256` | string or null | Yes | Hex-encoded SHA-256 digest of the ONNX model, or null if not included |
+| `libraries` | object | Yes | Per-library metadata (see below) |
+| `onnx_model_sha256` | string or null | Yes | Hex-encoded SHA-256 digest of the ONNX model, or null |
 | `created_at` | string | Yes | ISO 8601 timestamp of index creation |
 
-All values except checksums are read from the `index_meta` table of the source database.
+Each entry in `libraries` is keyed by library identifier and contains:
 
-### 4.4 Asset Download
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | string | Library version |
+| `sha256` | string | Hex-encoded SHA-256 digest of the per-library index file |
+| `asset_name` | string | Release asset filename (e.g., `index-stdlib.db`) |
+| `declarations` | integer | Number of declarations in this library's index |
+
+### 4.5 Asset Download
 
 #### download_file(url, dest, label)
 
 - REQUIRES: `url` is a valid HTTPS URL. `dest` is a writable path.
 - ENSURES: The file at `url` is downloaded to `{dest}.tmp`. Progress is printed to stderr during download: `Downloading {label} ... {downloaded_mb:.1f} / {total_mb:.1f} MB`. On success, returns the temporary file path. On network failure: deletes the temporary file and raises an error. On any other exception: deletes the temporary file and re-raises.
 
-Downloads use the asset's `browser_download_url` field (direct HTTPS, no redirect handling required). Data is read in 64 KB chunks.
+Downloads use the asset's `browser_download_url` field (direct HTTPS, no redirect handling required). Data is read in 64 KB chunks. This function is called once per selected library.
 
-### 4.5 Checksum Verification
+### 4.6 Checksum Verification
 
 #### verify_checksum(path, expected_sha256, label)
 
@@ -102,48 +141,66 @@ Downloads use the asset's `browser_download_url` field (direct HTTPS, no redirec
 > **When** `verify_checksum` is called
 > **Then** deletes the file and raises a checksum error
 
-### 4.6 Atomic File Placement
+### 4.7 Atomic File Placement
 
 After checksum verification succeeds, the temporary file is moved to the final destination via `os.replace()`. This operation is atomic on POSIX systems: the destination path always contains either the previous complete file or the new verified file.
 
-### 4.7 download-index CLI Subcommand
+### 4.8 Index Merging
+
+#### merge_indexes(sources, dest)
+
+- REQUIRES: `sources` is a non-empty list of `(library_name, path)` tuples where each path points to a valid per-library SQLite index database. All source databases must share the same `schema_version` and `coq_version` in their `index_meta` tables. `dest` is a writable path. If `dest` exists, it is deleted before merge begins.
+- ENSURES: Creates a new SQLite database at `dest` containing:
+  - All declarations from all source databases with new auto-assigned IDs
+  - All dependency edges with source and destination IDs remapped to the merged ID space. Edges where either endpoint references a declaration not present in any source are silently dropped.
+  - All WL histogram vectors with remapped declaration IDs
+  - A rebuilt FTS5 index covering all merged declarations
+  - Recomputed symbol frequencies across the merged set
+  - `index_meta` entries: `schema_version` and `coq_version` from sources, `libraries` as JSON array of library identifiers, `library_versions` as JSON object mapping identifier to version, `created_at` as current ISO 8601 timestamp
+- Returns a dict with keys: `total_declarations` (int), `total_dependencies` (int), `dropped_dependencies` (int), `libraries` (list of str).
+
+> **Given** `index-stdlib.db` with 100 declarations and `index-mathcomp.db` with 50 declarations
+> **When** `merge_indexes([("stdlib", stdlib_path), ("mathcomp", mc_path)], dest)` is called
+> **Then** `dest` contains 150 declarations, and the returned dict shows `total_declarations: 150`
+
+> **Given** `index-mathcomp.db` has dependency edges referencing stdlib declarations
+> **When** merged with `index-stdlib.db`
+> **Then** those dependency edges are resolved by name to the merged stdlib declaration IDs
+
+> **Given** `index-mathcomp.db` has dependency edges referencing stdlib declarations
+> **When** merged WITHOUT `index-stdlib.db`
+> **Then** those dependency edges are silently dropped and counted in `dropped_dependencies`
+
+> **Given** two source databases with different `schema_version` values
+> **When** `merge_indexes` is called
+> **Then** raises error: `"Schema version mismatch: {v1} vs {v2}"`
+
+### 4.9 download-index CLI Subcommand
 
 ```
-poule download-index [--output <path>] [--include-model] [--model-dir <path>] [--force]
+poule download-index [--output <path>] [--libraries-dir <path>] [--include-model] [--model-dir <path>] [--force]
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--output` | path | `./index.db` | Where to save the database file |
+| `--output` | path | `libraries_dir / index.db` | Where to save the merged database file |
+| `--libraries-dir` | path | `get_libraries_dir()` | Libraries directory for config and per-library indexes |
 | `--include-model` | flag | false | Also download the ONNX neural premise selection model |
 | `--model-dir` | path | `get_model_dir()` | Where to save the ONNX model |
 | `--force` | flag | false | Overwrite existing files without prompting |
 
 #### Behavior
 
-1. Check if `--output` exists and `--force` is not set → exit 1.
-2. If `--include-model`: check if model path exists and `--force` is not set → exit 1.
-3. Call `find_latest_release()` to resolve the latest index release.
-4. Download `manifest.json` from the release (in memory, not to disk).
-5. Download `index.db`: stream to temporary file, verify checksum, atomic rename to `--output`.
-6. If `--include-model` and `onnx_model_sha256` is not null: create `--model-dir` if needed, download ONNX model with same stream/verify/rename pattern. If `onnx_model_sha256` is null: print warning to stderr, skip.
-7. Print summary to stderr.
-
-> **Given** no `index.db` exists locally and a valid release exists on GitHub
-> **When** `download-index` is run
-> **Then** `index.db` is downloaded, verified, and placed at `./index.db`
-
-> **Given** `index.db` exists locally and `--force` is not set
-> **When** `download-index` is run
-> **Then** exits with code 1: `"./index.db already exists. Use --force to overwrite."`
-
-> **Given** `--include-model` is set and the release contains an ONNX model
-> **When** `download-index --include-model` is run
-> **Then** both `index.db` and the ONNX model are downloaded, verified, and placed
-
-> **Given** `--include-model` is set but the release has no ONNX model
-> **When** `download-index --include-model` is run
-> **Then** `index.db` is downloaded; a warning is printed to stderr; exit code is 0
+1. Read configuration via `load_config(libraries_dir)`.
+2. Call `find_latest_release()` to resolve the latest index release.
+3. Download `manifest.json` from the release (in memory).
+4. For each configured library:
+   a. Check if `index-{library}.db` exists in `libraries_dir` with checksum matching the manifest → skip if up to date.
+   b. Otherwise: download, verify checksum, atomic rename to `libraries_dir / index-{library}.db`.
+5. If any library was downloaded or `index.db` does not exist in `libraries_dir`:
+   a. Run `merge_indexes` to produce `libraries_dir / index.db`.
+6. If `--include-model` and `onnx_model_sha256` is not null: download ONNX model.
+7. Print summary.
 
 ## 5. Publish Script
 
@@ -152,7 +209,7 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 ### Signature
 
 ```
-./scripts/publish-release.sh <DB_PATH> [--model <MODEL_PATH>]
+./scripts/publish-release.sh index-stdlib.db index-mathcomp.db ... [--model <MODEL_PATH>]
 ```
 
 ### Prerequisites
@@ -166,13 +223,12 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 ### Behavior
 
 1. Validate prerequisites (all tools present, `gh` authenticated, files exist).
-2. Read `schema_version`, `coq_version`, `mathcomp_version`, `created_at` from the database's `index_meta` table via `sqlite3`.
+2. For each per-library DB: read `schema_version`, `coq_version`, library-specific version from `index_meta`. Verify all share the same `schema_version` and `coq_version`.
 3. Compute SHA-256 checksums of all assets.
-4. Generate `manifest.json` (temporary file).
-5. Construct release tag: `index-v{schema_version}-coq{coq_version}-mc{mathcomp_version}`.
+4. Generate `manifest.json` with per-library entries.
+5. Construct release tag: `index-v{schema_version}-coq{coq_version}`.
 6. If tag already exists: abort with error.
-7. Create GitHub Release via `gh release create` with all assets.
-8. Print release URL on success.
+7. Create GitHub Release via `gh release create` with all per-library assets + manifest + optional model.
 
 ## 6. Error Specification
 
@@ -180,13 +236,16 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 
 | Condition | Exit code | stderr message |
 |-----------|-----------|---------------|
-| Output file exists, no `--force` | 1 | `{path} already exists. Use --force to overwrite.` |
-| Model file exists, no `--force` | 1 | `{path} already exists. Use --force to overwrite.` |
+| Unknown library in config | 1 | `Unknown library '{name}'. Valid libraries: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval` |
+| Empty library list | 1 | `At least one library must be selected.` |
 | Network failure / API unreachable | 1 | `Failed to reach GitHub API: {details}` |
 | No matching release | 1 | `No index release found on GitHub.` |
+| Library not in release manifest | 1 | `Library '{name}' not found in release manifest.` |
 | Asset not found in release | 1 | `Asset '{name}' not found in release '{tag}'.` |
 | Download failure | 1 | `Download failed for {label}: {details}` |
 | Checksum mismatch | 1 | `Checksum verification failed for {label}. Expected {expected}, got {actual}. File deleted.` |
+| Schema version mismatch during merge | 1 | `Schema version mismatch: {v1} vs {v2}` |
+| Coq version mismatch during merge | 1 | `Coq version mismatch: {v1} vs {v2}` |
 | Disk write error | 1 | `Failed to write {path}: {details}` |
 
 ### publish-release.sh
@@ -212,57 +271,82 @@ The publish script (`scripts/publish-release.sh`) is a shell script for the proj
 
 ## 8. Examples
 
-### Download prebuilt index
+### Download with default config (stdlib only)
 
 ```
 $ poule download-index
+Reading config from ~/poule-libraries/config.toml
+Libraries: stdlib
 Finding latest index release...
-Found release: index-v1-coq8.19-mc2.2.0
-  Downloading index.db ... 142.3 / 142.3 MB
-  index.db (142.3 MB) -> ./index.db
-Done.
+Found release: index-v1-coq8.19
+  index-stdlib.db is up to date.
+  Merging 1 library into index.db...
+Done. Indexed: stdlib 8.19.2
+```
+
+### Download with multiple libraries
+
+```
+$ poule download-index
+Reading config from ~/poule-libraries/config.toml
+Libraries: stdlib, mathcomp, flocq
+Finding latest index release...
+Found release: index-v1-coq8.19
+  Downloading index-stdlib.db ... 25.3 / 25.3 MB
+  Downloading index-mathcomp.db ... 18.7 / 18.7 MB
+  Downloading index-flocq.db ... 8.2 / 8.2 MB
+  Merging 3 libraries into index.db...
+Done. Indexed: stdlib 8.19.2, mathcomp 2.2.0, flocq 4.2.1
+```
+
+### Skip up-to-date libraries
+
+```
+$ poule download-index
+Reading config from ~/poule-libraries/config.toml
+Libraries: stdlib, mathcomp, flocq
+Finding latest index release...
+Found release: index-v1-coq8.19
+  index-stdlib.db is up to date.
+  index-mathcomp.db is up to date.
+  index-flocq.db is up to date.
+  index.db is up to date.
+Done. Indexed: stdlib 8.19.2, mathcomp 2.2.0, flocq 4.2.1
 ```
 
 ### Download with neural model
 
 ```
 $ poule download-index --include-model
+Reading config from ~/poule-libraries/config.toml
+Libraries: stdlib
 Finding latest index release...
-Found release: index-v1-coq8.19-mc2.2.0
-  Downloading index.db ... 142.3 / 142.3 MB
-  index.db (142.3 MB) -> ./index.db
+Found release: index-v1-coq8.19
+  Downloading index-stdlib.db ... 25.3 / 25.3 MB
+  Merging 1 library into index.db...
   Downloading neural-premise-selector.onnx ... 98.5 / 98.5 MB
   neural-premise-selector.onnx (98.5 MB) -> /home/user/.local/share/poule/models/neural-premise-selector.onnx
-Done.
-```
-
-### File already exists
-
-```
-$ poule download-index
-Error: ./index.db already exists. Use --force to overwrite.
-$ echo $?
-1
+Done. Indexed: stdlib 8.19.2
 ```
 
 ### Publish a release
 
 ```
-$ ./scripts/publish-release.sh index.db --model models/neural-premise-selector.onnx
+$ ./scripts/publish-release.sh index-stdlib.db index-mathcomp.db --model models/neural-premise-selector.onnx
 Index metadata:
   schema_version:  1
   coq_version:     8.19
-  mathcomp_version: 2.2.0
-  created_at:      2026-03-17T12:00:00Z
-  index.db SHA-256: a1b2c3...
-  ONNX SHA-256:    d4e5f6...
+Libraries:
+  stdlib:          8.19.2  (SHA-256: a1b2c3...)
+  mathcomp:        2.2.0   (SHA-256: d4e5f6...)
+  ONNX model:              (SHA-256: 789abc...)
 
 Generated manifest.json:
 { ... }
 
-Release tag: index-v1-coq8.19-mc2.2.0
-Release created: index-v1-coq8.19-mc2.2.0
-URL: https://github.com/ekirton/Poule/releases/tag/index-v1-coq8.19-mc2.2.0
+Release tag: index-v1-coq8.19
+Release created: index-v1-coq8.19
+URL: https://github.com/ekirton/Poule/releases/tag/index-v1-coq8.19
 ```
 
 ## 9. Language-Specific Notes (Python)
@@ -272,4 +356,7 @@ URL: https://github.com/ekirton/Poule/releases/tag/index-v1-coq8.19-mc2.2.0
 - Use `hashlib.sha256` for checksum computation.
 - Use `os.replace` for atomic file rename (POSIX atomic, Windows replaces atomically if same volume).
 - Use `click.echo(..., err=True)` for all progress and status output.
+- Use `tomllib` (Python 3.11+ stdlib) for TOML parsing — no external dependency.
+- Merge module location: `src/poule/cli/merge.py` or `src/poule/storage/merge.py`.
+- Configuration module location: `src/poule/config.py`.
 - Package location: download client in `src/poule/cli/download.py`, path helpers in `src/poule/paths.py`.

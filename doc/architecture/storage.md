@@ -53,7 +53,8 @@ CREATE TABLE index_meta (
 -- Required keys:
 --   'schema_version'  → tool's index schema version (e.g., '1')
 --   'coq_version'     → Coq/Rocq version used during indexing
---   'mathcomp_version' → MathComp version (if indexed), or "none"
+--   'libraries' → JSON array of indexed library identifiers (e.g., '["stdlib", "mathcomp"]')
+--   'library_versions' → JSON object mapping library identifier to version string (e.g., '{"stdlib": "8.19.2", "mathcomp": "2.2.0"}')
 --   'created_at'      → ISO 8601 timestamp of index creation
 -- Optional keys (Neural Premise Selection):
 --   'neural_model_hash' → SHA-256 hash of the model checkpoint used to compute embeddings
@@ -101,4 +102,4 @@ The database is built from scratch during each indexing run. There is no increme
 
 ## Read Path
 
-**Version check responsibility**: The storage module (`IndexReader`) validates `schema_version` against the tool's expected version and exposes the stored `coq_version` and `mathcomp_version` values. The caller (MCP server or extraction CLI) is responsible for comparing library versions against the currently installed versions. This keeps version detection logic outside the storage module's scope.
+**Version check responsibility**: The storage module (`IndexReader`) validates `schema_version` against the tool's expected version and exposes the stored `coq_version` and `library_versions` values. The caller (MCP server or extraction CLI) is responsible for comparing library versions against the currently installed versions. This keeps version detection logic outside the storage module's scope.

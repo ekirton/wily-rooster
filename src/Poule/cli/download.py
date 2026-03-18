@@ -12,7 +12,9 @@ from pathlib import Path
 
 import click
 
+from Poule.config import get_libraries_dir, load_config
 from Poule.paths import get_model_dir
+from Poule.storage.merge import merge_indexes
 
 GITHUB_API_URL = "https://api.github.com/repos/ekirton/Poule/releases"
 TAG_PREFIX = "index-v"
@@ -116,13 +118,24 @@ def _download_and_verify(
     click.echo(f"  {label} ({size_mb:.1f} MB) -> {dest}", err=True)
 
 
+def _file_sha256(path: Path) -> str:
+    """Compute SHA-256 hex digest of a file."""
+    sha256 = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
 @click.command("download-index")
 @click.option(
-    "--output",
+    "--libraries-dir",
     type=click.Path(path_type=Path),
-    default=Path("index.db"),
-    help="Where to save the database file.",
-    show_default=True,
+    default=None,
+    help="Libraries directory for config and per-library indexes.",
 )
 @click.option(
     "--include-model",
@@ -143,31 +156,37 @@ def _download_and_verify(
     help="Overwrite existing files without prompting.",
 )
 def download_index(
-    output: Path, include_model: bool, model_dir: Path | None, force: bool
+    libraries_dir: Path | None,
+    include_model: bool,
+    model_dir: Path | None,
+    force: bool,
 ) -> None:
     """Download the prebuilt search index from GitHub Releases."""
+    # 1. Resolve directories
+    if libraries_dir is None:
+        libraries_dir = get_libraries_dir()
+    libraries_dir.mkdir(parents=True, exist_ok=True)
+
     if model_dir is None:
         model_dir = get_model_dir()
 
-    # Check for existing files before downloading anything
-    if output.exists() and not force:
-        raise click.ClickException(
-            f"{output} already exists. Use --force to overwrite."
-        )
+    # 2. Read config
+    libraries = load_config(libraries_dir)
 
+    # 3. Check for existing model before downloading anything
     model_path = model_dir / "neural-premise-selector.onnx"
     if include_model and model_path.exists() and not force:
         raise click.ClickException(
             f"{model_path} already exists. Use --force to overwrite."
         )
 
-    # Resolve latest release
+    # 4. Resolve latest release
     click.echo("Finding latest index release...", err=True)
     release = _find_latest_release()
     tag = release["tag_name"]
     click.echo(f"Found release: {tag}", err=True)
 
-    # Download and parse manifest
+    # 5. Download and parse manifest
     manifest_asset = _find_asset(release, "manifest.json")
     req = urllib.request.Request(manifest_asset["browser_download_url"])
     try:
@@ -178,12 +197,39 @@ def download_index(
             f"Failed to download manifest: {exc}"
         ) from exc
 
-    # Download index.db
-    _download_and_verify(
-        release, "index.db", output, manifest["index_db_sha256"], "index.db"
-    )
+    # 6. Download per-library index files
+    for lib in libraries:
+        lib_entry = manifest["libraries"].get(lib)
+        if lib_entry is None:
+            click.echo(f"  Warning: library '{lib}' not in manifest. Skipping.", err=True)
+            continue
 
-    # Download ONNX model if requested
+        asset_name = lib_entry["asset_name"]
+        expected_sha = lib_entry["sha256"]
+        dest = libraries_dir / asset_name
+
+        # Skip if already downloaded with matching checksum
+        if dest.exists():
+            if _file_sha256(dest) == expected_sha:
+                click.echo(f"  {asset_name} already up to date. Skipping.", err=True)
+                continue
+
+        _download_and_verify(release, asset_name, dest, expected_sha, asset_name)
+
+    # 7. Merge per-library indexes into a single index.db
+    sources = []
+    for lib in libraries:
+        lib_entry = manifest["libraries"].get(lib)
+        if lib_entry is None:
+            continue
+        lib_path = libraries_dir / lib_entry["asset_name"]
+        if lib_path.exists():
+            sources.append((lib, lib_path))
+
+    merged_dest = libraries_dir / "index.db"
+    merge_indexes(sources, merged_dest)
+
+    # 8. Handle ONNX model if requested
     if include_model:
         onnx_checksum = manifest.get("onnx_model_sha256")
         if not onnx_checksum:
@@ -200,4 +246,5 @@ def download_index(
                 "neural-premise-selector.onnx",
             )
 
+    # 9. Done
     click.echo("Done.", err=True)

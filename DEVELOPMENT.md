@@ -8,7 +8,7 @@
 - [Git](https://git-scm.com/)
 - An [Anthropic API key](https://console.anthropic.com/) or Claude Code login
 
-No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, MathComp, and Python environment. Claude Code is baked into the Docker image at build time and symlinked into the persistent home directory on each launch.
+No local Coq, Python, or opam installation is needed. All development happens inside the container, which provides the full Coq/Rocq toolchain, coq-lsp, supported Coq libraries, and Python environment. Claude Code is baked into the Docker image at build time and symlinked into the persistent home directory on each launch.
 
 ### Clone and build
 
@@ -288,7 +288,7 @@ Prebuilt search indexes and neural model checkpoints are distributed via [GitHub
 
 Publish a new release when any of these change:
 - Coq version (new stdlib declarations)
-- MathComp version (new library content)
+- Any supported library version (new library content)
 - Index schema version (storage layer changes)
 - Neural model (retrained or improved checkpoint)
 
@@ -303,7 +303,7 @@ Publish a new release when any of these change:
 1. Build the index:
 
 ```bash
-uv run python -m poule.extraction --target stdlib+mathcomp --db index.db --progress
+uv run python -m poule.extraction --target stdlib --db index-stdlib.db --progress
 ```
 
 2. Publish with the index only:
@@ -318,7 +318,7 @@ uv run python -m poule.extraction --target stdlib+mathcomp --db index.db --progr
 ./scripts/publish-release.sh index.db --model path/to/neural-premise-selector.onnx
 ```
 
-The script reads `schema_version`, `coq_version`, and `mathcomp_version` from the database's `index_meta` table, computes SHA-256 checksums, generates a `manifest.json`, and creates a tagged release. The tag format is `index-v{schema}-coq{coq_version}-mc{mathcomp_version}` (e.g., `index-v1-coq8.19-mc2.2.0`).
+The script reads version metadata from each database, computes SHA-256 checksums, generates a `manifest.json`, and creates a tagged release. The tag format is `index-v{schema}-coq{coq_version}` (e.g., `index-v1-coq8.19`).
 
 ### Release assets
 

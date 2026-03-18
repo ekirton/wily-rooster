@@ -1,6 +1,7 @@
 # Semantic Lemma Search for Coq/Rocq — Product Requirements Document
 
 Cross-reference: see [coq-ecosystem-opportunities.md](coq-ecosystem-opportunities.md) for ecosystem context and initiative sequencing.
+Cross-reference: see [modular-index-distribution.md](modular-index-distribution.md) for per-library index distribution.
 
 ## 1. Business Goals
 
@@ -11,7 +12,7 @@ This initiative delivers a semantic lemma search engine for Coq/Rocq libraries, 
 **Success metrics:**
 - ≥ 70% recall@50 on a hand-curated evaluation set of common Coq search tasks
 - < 1 second end-to-end retrieval latency for indexes up to 50K declarations
-- Successful indexing of Coq standard library and MathComp without GPU, API keys, or network access
+- Successful indexing of any configured Coq library set without GPU, API keys, or network access
 
 ---
 
@@ -20,7 +21,7 @@ This initiative delivers a semantic lemma search engine for Coq/Rocq libraries, 
 | Segment | Needs | Priority |
 |---------|-------|----------|
 | Coq developers using Claude Code | Find lemmas by name, type, structure, or natural language description within a conversational workflow | Primary |
-| MathComp users | Search across MathComp's large, densely cross-referenced library alongside stdlib | Primary |
+| Users of supported libraries | Search across configured libraries (e.g., MathComp, stdpp, Flocq) alongside stdlib | Primary |
 | Coq developers working on custom projects | Index and search their own declarations alongside library declarations | Secondary |
 
 ---
@@ -61,7 +62,7 @@ Cross-references:
 | ID | Requirement |
 |----|-------------|
 | R-P0-1 | Index all declarations from the Coq standard library with a single CLI command |
-| R-P0-2 | Index MathComp alongside stdlib in the same database |
+| R-P0-2 | Index any combination of supported libraries in the same database (see [modular-index-distribution](modular-index-distribution.md) for library selection) |
 | R-P0-3 | Store the index in a single SQLite database with no external service dependencies |
 | R-P0-4 | Expose search tools via an MCP server compatible with Claude Code (stdio transport) |
 | R-P0-5 | Support search by name pattern (glob/regex on fully qualified names) |
@@ -106,7 +107,7 @@ Cross-references:
 - Semantic lemma search for Coq/Rocq libraries
 - MCP server deployment for Claude Code integration (stdio transport)
 - Standalone CLI search tool (same retrieval capabilities as MCP, for terminal workflows)
-- Offline indexing CLI for stdlib, MathComp, and user projects
+- Offline indexing CLI for configured libraries and user projects
 - Tree-based and symbolic retrieval channels (no neural embeddings in v1)
 - SQLite-based local index storage
 

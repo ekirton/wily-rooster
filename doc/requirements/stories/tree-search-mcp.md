@@ -33,7 +33,7 @@ Derived from [doc/requirements/semantic-lemma-search.md](../semantic-lemma-searc
 
 **Acceptance criteria:**
 - GIVEN a system with MathComp installed WHEN the user runs the indexing command targeting MathComp THEN MathComp declarations are stored in the same database as stdlib declarations
-- GIVEN the database contains both stdlib and MathComp WHEN a declaration is inspected THEN it is distinguished by its fully qualified module path
+- GIVEN the database contains declarations from multiple libraries WHEN a declaration is inspected THEN it is distinguished by its fully qualified module path
 - GIVEN MathComp's nested module structure WHEN declarations are indexed THEN fully qualified names and module membership are recorded correctly
 
 ### 1.3 Index a User Project

@@ -1,6 +1,6 @@
 """Tests for poule.cli.download — CLI command to download prebuilt index.
 
-Spec: specification/prebuilt-distribution.md §4.2–§4.7, §6
+Spec: specification/prebuilt-distribution.md §4.2–§4.9, §6
       specification/cli.md §4.16
 
 Import paths under test:
@@ -40,17 +40,35 @@ SAMPLE_DB_SHA256 = hashlib.sha256(SAMPLE_DB_CONTENT).hexdigest()
 SAMPLE_ONNX_CONTENT = b"fake-onnx-model-bytes"
 SAMPLE_ONNX_SHA256 = hashlib.sha256(SAMPLE_ONNX_CONTENT).hexdigest()
 
+SAMPLE_STDLIB_CONTENT = b"fake-stdlib-index-content"
+SAMPLE_STDLIB_SHA256 = hashlib.sha256(SAMPLE_STDLIB_CONTENT).hexdigest()
+
+SAMPLE_MATHCOMP_CONTENT = b"fake-mathcomp-index-content"
+SAMPLE_MATHCOMP_SHA256 = hashlib.sha256(SAMPLE_MATHCOMP_CONTENT).hexdigest()
+
 SAMPLE_MANIFEST = {
     "schema_version": "1",
     "coq_version": "8.19",
-    "mathcomp_version": "2.2.0",
-    "index_db_sha256": SAMPLE_DB_SHA256,
+    "libraries": {
+        "stdlib": {
+            "version": "8.19.2",
+            "sha256": SAMPLE_STDLIB_SHA256,
+            "asset_name": "index-stdlib.db",
+            "declarations": 12450,
+        },
+        "mathcomp": {
+            "version": "2.2.0",
+            "sha256": SAMPLE_MATHCOMP_SHA256,
+            "asset_name": "index-mathcomp.db",
+            "declarations": 8320,
+        },
+    },
     "onnx_model_sha256": SAMPLE_ONNX_SHA256,
-    "created_at": "2026-03-17T00:00:00Z",
+    "created_at": "2026-03-18T00:00:00Z",
 }
 
 
-def _make_release(tag: str = "index-v1-coq8.19-mc2.2.0") -> dict:
+def _make_release(tag: str = "index-v1-coq8.19") -> dict:
     """Create a fake GitHub release dict."""
     return {
         "tag_name": tag,
@@ -61,14 +79,19 @@ def _make_release(tag: str = "index-v1-coq8.19-mc2.2.0") -> dict:
                 "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/1",
             },
             {
-                "name": "index.db",
-                "browser_download_url": "https://example.com/index.db",
+                "name": "index-stdlib.db",
+                "browser_download_url": "https://example.com/index-stdlib.db",
                 "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/2",
+            },
+            {
+                "name": "index-mathcomp.db",
+                "browser_download_url": "https://example.com/index-mathcomp.db",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/3",
             },
             {
                 "name": "neural-premise-selector.onnx",
                 "browser_download_url": "https://example.com/model.onnx",
-                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/3",
+                "url": "https://api.github.com/repos/ekirton/Poule/releases/assets/4",
             },
         ],
     }
@@ -107,8 +130,8 @@ class TestFindLatestRelease:
     def test_returns_first_matching_release(self):
         releases = [
             {"tag_name": "v0.1.0", "assets": []},
-            _make_release("index-v1-coq8.19-mc2.2.0"),
-            _make_release("index-v1-coq8.18-mc2.1.0"),
+            _make_release("index-v1-coq8.19"),
+            _make_release("index-v1-coq8.18"),
         ]
         with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
@@ -117,13 +140,13 @@ class TestFindLatestRelease:
             resp.__exit__ = lambda s, *a: None
             mock_open.return_value = resp
             result = _find_latest_release()
-        assert result["tag_name"] == "index-v1-coq8.19-mc2.2.0"
+        assert result["tag_name"] == "index-v1-coq8.19"
 
     def test_selects_most_recent_among_multiple_index_releases(self):
-        """§4.2: Given two index-v releases, returns the first (most recent)."""
+        """§4.3: Given two index-v releases, returns the first (most recent)."""
         releases = [
-            _make_release("index-v1-coq8.20-mc2.3.0"),
-            _make_release("index-v1-coq8.19-mc2.2.0"),
+            _make_release("index-v1-coq8.20"),
+            _make_release("index-v1-coq8.19"),
         ]
         with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
@@ -133,7 +156,7 @@ class TestFindLatestRelease:
             mock_open.return_value = resp
             result = _find_latest_release()
         # API returns reverse chronological; first match is most recent
-        assert result["tag_name"] == "index-v1-coq8.20-mc2.3.0"
+        assert result["tag_name"] == "index-v1-coq8.20"
 
     def test_no_matching_release_raises_click_exception(self):
         releases = [{"tag_name": "v0.1.0", "assets": []}]
@@ -174,7 +197,7 @@ class TestVerifyChecksum:
         assert f.exists()
 
     def test_mismatched_checksum_deletes_and_raises(self, tmp_path):
-        """§4.5: deletes file, message includes 'Expected {expected}, got {actual}. File deleted.'"""
+        """§4.6: deletes file, message includes 'Expected {expected}, got {actual}. File deleted.'"""
         wrong_content = b"wrong content"
         wrong_sha = hashlib.sha256(wrong_content).hexdigest()
         f = tmp_path / "test.db"
@@ -199,16 +222,16 @@ class TestFindAsset:
 
     def test_returns_matching_asset(self):
         release = _make_release()
-        asset = _find_asset(release, "index.db")
-        assert asset["name"] == "index.db"
+        asset = _find_asset(release, "index-stdlib.db")
+        assert asset["name"] == "index-stdlib.db"
 
     def test_missing_asset_raises_click_exception(self):
         """§6: 'Asset '{name}' not found in release '{tag}'.'"""
-        release = _make_release("index-v1-coq8.19-mc2.2.0")
+        release = _make_release("index-v1-coq8.19")
         import click
         with pytest.raises(click.ClickException, match="Asset 'missing.bin' not found") as exc_info:
             _find_asset(release, "missing.bin")
-        assert "index-v1-coq8.19-mc2.2.0" in exc_info.value.message
+        assert "index-v1-coq8.19" in exc_info.value.message
 
 
 # ===========================================================================
@@ -219,32 +242,34 @@ class TestFindAsset:
 class TestDownloadIndexCommand:
     """CLI download-index command end-to-end with mocked network."""
 
-    def _invoke_download(self, runner, tmp_path, extra_args=None):
+    def _invoke_download(self, runner, tmp_path, libraries=None, extra_args=None):
         """Invoke download-index with fully mocked network I/O."""
-        output_path = tmp_path / "index.db"
+        libs_dir = tmp_path / "libraries"
+        libs_dir.mkdir()
+
+        # Write config
+        if libraries:
+            config = libs_dir / "config.toml"
+            config.write_text(f'[index]\nlibraries = {json.dumps(libraries)}\n')
+
         releases = [_make_release()]
         manifest_bytes = json.dumps(SAMPLE_MANIFEST).encode()
 
         url_map = {
             "https://example.com/manifest.json": manifest_bytes,
-            "https://example.com/index.db": SAMPLE_DB_CONTENT,
+            "https://example.com/index-stdlib.db": SAMPLE_STDLIB_CONTENT,
+            "https://example.com/index-mathcomp.db": SAMPLE_MATHCOMP_CONTENT,
             "https://example.com/model.onnx": SAMPLE_ONNX_CONTENT,
         }
 
-        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
-            # First call: list releases; subsequent calls: download assets
-            api_resp = MagicMock()
-            api_resp.read.return_value = json.dumps(releases).encode()
-            api_resp.__enter__ = lambda s: s
-            api_resp.__exit__ = lambda s, *a: None
-
-            mock_open.side_effect = _mock_urlopen(url_map)
-            # Override the first call (API listing) to return releases JSON
-            original_side_effect = mock_open.side_effect
-
-            call_count = [0]
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open, \
+             patch("Poule.cli.download.merge_indexes", return_value={
+                 "total_declarations": 100,
+                 "total_dependencies": 50,
+                 "dropped_dependencies": 0,
+                 "libraries": libraries or ["stdlib"],
+             }) as mock_merge:
             def _routing_side_effect(req):
-                call_count[0] += 1
                 url = req.full_url if hasattr(req, "full_url") else str(req)
                 if "api.github.com" in url:
                     resp = MagicMock()
@@ -253,34 +278,60 @@ class TestDownloadIndexCommand:
                     resp.__enter__ = lambda s: s
                     resp.__exit__ = lambda s, *a: None
                     return resp
-                return original_side_effect(req)
+                content = url_map.get(url, b"")
+                resp = MagicMock()
+                resp.read = BytesIO(content).read
+                resp.headers = {"Content-Length": str(len(content))}
+                resp.__enter__ = lambda s: s
+                resp.__exit__ = lambda s, *a: None
+                return resp
 
             mock_open.side_effect = _routing_side_effect
 
-            args = ["--output", str(output_path)]
+            args = ["--libraries-dir", str(libs_dir)]
             if extra_args:
                 args.extend(extra_args)
             result = runner.invoke(download_index, args)
 
-        return result, output_path
+        return result, libs_dir, mock_merge
 
-    def test_downloads_index_db(self, runner, tmp_path):
-        result, output_path = self._invoke_download(runner, tmp_path)
+    def test_downloads_per_library_indexes(self, runner, tmp_path):
+        """§4.9: Downloads per-library index files to libraries dir."""
+        result, libs_dir, _ = self._invoke_download(
+            runner, tmp_path, libraries=["stdlib"]
+        )
         assert result.exit_code == 0, result.output
-        assert output_path.exists()
-        assert output_path.read_bytes() == SAMPLE_DB_CONTENT
+        assert (libs_dir / "index-stdlib.db").exists()
+
+    def test_downloads_only_configured_libraries(self, runner, tmp_path):
+        """§4.9: Only downloads libraries in config."""
+        result, libs_dir, _ = self._invoke_download(
+            runner, tmp_path, libraries=["stdlib"]
+        )
+        assert result.exit_code == 0, result.output
+        assert (libs_dir / "index-stdlib.db").exists()
+        assert not (libs_dir / "index-mathcomp.db").exists()
+
+    def test_calls_merge_indexes(self, runner, tmp_path):
+        """§4.9: After download, merge_indexes is called."""
+        result, libs_dir, mock_merge = self._invoke_download(
+            runner, tmp_path, libraries=["stdlib"]
+        )
+        assert result.exit_code == 0, result.output
+        mock_merge.assert_called_once()
 
     def test_prints_done_on_success(self, runner, tmp_path):
-        result, _ = self._invoke_download(runner, tmp_path)
+        """§4.9: Prints summary on success."""
+        result, _, _ = self._invoke_download(runner, tmp_path, libraries=["stdlib"])
         assert result.exit_code == 0
-        # "Done." is printed to stderr; CliRunner mixes output by default
         assert "Done" in result.output
 
     def test_include_model_downloads_onnx(self, runner, tmp_path):
         """§4.7: --include-model with ONNX in release → both downloaded."""
         model_dir = tmp_path / "models"
-        result, _ = self._invoke_download(
+        result, _, _ = self._invoke_download(
             runner, tmp_path,
+            libraries=["stdlib"],
             extra_args=["--include-model", "--model-dir", str(model_dir)],
         )
         assert result.exit_code == 0, result.output
@@ -290,7 +341,10 @@ class TestDownloadIndexCommand:
 
     def test_include_model_null_onnx_prints_warning_and_skips(self, runner, tmp_path):
         """§4.7: --include-model but onnx_model_sha256 is null → warning, skip, exit 0."""
-        output_path = tmp_path / "index.db"
+        libs_dir = tmp_path / "libraries"
+        libs_dir.mkdir()
+        config = libs_dir / "config.toml"
+        config.write_text('[index]\nlibraries = ["stdlib"]\n')
         model_dir = tmp_path / "models"
         manifest_no_onnx = {
             **SAMPLE_MANIFEST,
@@ -301,10 +355,16 @@ class TestDownloadIndexCommand:
 
         url_map = {
             "https://example.com/manifest.json": manifest_bytes,
-            "https://example.com/index.db": SAMPLE_DB_CONTENT,
+            "https://example.com/index-stdlib.db": SAMPLE_STDLIB_CONTENT,
         }
 
-        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
+        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open, \
+             patch("Poule.cli.download.merge_indexes", return_value={
+                 "total_declarations": 100,
+                 "total_dependencies": 50,
+                 "dropped_dependencies": 0,
+                 "libraries": ["stdlib"],
+             }):
             def _routing(req):
                 url = req.full_url if hasattr(req, "full_url") else str(req)
                 if "api.github.com" in url:
@@ -324,7 +384,7 @@ class TestDownloadIndexCommand:
             mock_open.side_effect = _routing
             result = runner.invoke(
                 download_index,
-                ["--output", str(output_path), "--include-model", "--model-dir", str(model_dir)],
+                ["--libraries-dir", str(libs_dir), "--include-model", "--model-dir", str(model_dir)],
             )
         assert result.exit_code == 0, result.output
         assert "Warning" in result.output or "No ONNX model" in result.output
@@ -339,65 +399,26 @@ class TestDownloadIndexCommand:
 class TestDownloadIndexErrors:
     """download-index error handling."""
 
-    def test_output_exists_without_force_exits_1(self, runner, tmp_path):
-        """§6: '{path} already exists. Use --force to overwrite.'"""
-        existing = tmp_path / "index.db"
-        existing.write_text("existing")
-        result = runner.invoke(download_index, ["--output", str(existing)])
-        assert result.exit_code == 1
-        assert "already exists" in result.output
-        assert "--force to overwrite" in result.output
-
-    def test_output_exists_with_force_proceeds(self, runner, tmp_path):
-        existing = tmp_path / "index.db"
-        existing.write_text("old")
-        releases = [_make_release()]
-        manifest_bytes = json.dumps(SAMPLE_MANIFEST).encode()
-
-        url_map = {
-            "https://example.com/manifest.json": manifest_bytes,
-            "https://example.com/index.db": SAMPLE_DB_CONTENT,
-        }
-
-        with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
-            def _routing(req):
-                url = req.full_url if hasattr(req, "full_url") else str(req)
-                if "api.github.com" in url:
-                    resp = MagicMock()
-                    resp.read.return_value = json.dumps(releases).encode()
-                    resp.headers = {"Content-Length": "0"}
-                    resp.__enter__ = lambda s: s
-                    resp.__exit__ = lambda s, *a: None
-                    return resp
-                content = url_map.get(url, b"")
-                resp = MagicMock()
-                resp.read = BytesIO(content).read
-                resp.headers = {"Content-Length": str(len(content))}
-                resp.__enter__ = lambda s: s
-                resp.__exit__ = lambda s, *a: None
-                return resp
-            mock_open.side_effect = _routing
-            result = runner.invoke(
-                download_index, ["--output", str(existing), "--force"]
-            )
-        assert result.exit_code == 0, result.output
-        assert existing.read_bytes() == SAMPLE_DB_CONTENT
-
     def test_model_exists_without_force_exits_1(self, runner, tmp_path):
         """§6: Model file exists, no --force → exit 1."""
-        db_output = tmp_path / "index.db"
+        libs_dir = tmp_path / "libraries"
+        libs_dir.mkdir()
+        config = libs_dir / "config.toml"
+        config.write_text('[index]\nlibraries = ["stdlib"]\n')
         model_dir = tmp_path / "models"
         model_dir.mkdir()
         (model_dir / "neural-premise-selector.onnx").write_text("existing")
         result = runner.invoke(
             download_index,
-            ["--output", str(db_output), "--include-model", "--model-dir", str(model_dir)],
+            ["--libraries-dir", str(libs_dir), "--include-model", "--model-dir", str(model_dir)],
         )
         assert result.exit_code == 1
         assert "already exists" in result.output
 
     def test_no_release_found_exits_1(self, runner, tmp_path):
         """§6: No matching release → exit 1, 'No index release found on GitHub.'"""
+        libs_dir = tmp_path / "libraries"
+        libs_dir.mkdir()
         releases = [{"tag_name": "v0.1.0", "assets": []}]
         with patch("Poule.cli.download.urllib.request.urlopen") as mock_open:
             resp = MagicMock()
@@ -406,20 +427,22 @@ class TestDownloadIndexErrors:
             resp.__exit__ = lambda s, *a: None
             mock_open.return_value = resp
             result = runner.invoke(
-                download_index, ["--output", str(tmp_path / "index.db")]
+                download_index, ["--libraries-dir", str(libs_dir)]
             )
         assert result.exit_code == 1
         assert "No index release found on GitHub" in result.output
 
     def test_network_error_exits_1(self, runner, tmp_path):
         """§6: Network failure → exit 1, 'Failed to reach GitHub API: {details}'."""
+        libs_dir = tmp_path / "libraries"
+        libs_dir.mkdir()
         import urllib.error
         with patch(
             "Poule.cli.download.urllib.request.urlopen",
             side_effect=urllib.error.URLError("Connection refused"),
         ):
             result = runner.invoke(
-                download_index, ["--output", str(tmp_path / "index.db")]
+                download_index, ["--libraries-dir", str(libs_dir)]
             )
         assert result.exit_code == 1
         assert "Failed to reach GitHub API" in result.output
@@ -440,7 +463,7 @@ class TestDownloadIndexHelp:
 
     def test_help_shows_all_options(self, runner):
         result = runner.invoke(download_index, ["--help"])
-        assert "--output" in result.output
+        assert "--libraries-dir" in result.output
         assert "--include-model" in result.output
         assert "--model-dir" in result.output
         assert "--force" in result.output

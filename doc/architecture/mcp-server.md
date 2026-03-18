@@ -262,6 +262,6 @@ All error responses use MCP's standard error format:
 On startup, the server checks the index in this order:
 1. Does the database file exist? If not → `INDEX_MISSING`.
 2. Does the `schema_version` in `index_meta` match the tool's expected version? If not → full re-index.
-3. Do the library versions in `index_meta` match the currently installed versions? If not → `INDEX_VERSION_MISMATCH`; the user must re-index manually. Phase 1 validates `schema_version` only. `coq_version` and `mathcomp_version` are stored for informational purposes; library version checks are deferred to Phase 2.
+3. Do the library versions in `index_meta` match the currently installed versions? If not → `INDEX_VERSION_MISMATCH`; the user must re-index manually. Phase 1 validates `schema_version` only. `coq_version` and `library_versions` are stored for informational purposes; library version checks are deferred to Phase 2.
 
 Proof interaction errors include the unchanged ProofState in the response body (alongside the error object) when the session is still active. This allows the LLM to report both the error and the current state to the user without a separate `observe_proof_state` call.

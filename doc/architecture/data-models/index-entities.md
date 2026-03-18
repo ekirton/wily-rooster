@@ -99,7 +99,8 @@ A key-value metadata entry managing index lifecycle and version compatibility.
 |-----|-----------------|
 | `schema_version` | Parseable as a positive integer; must match the tool's expected version |
 | `coq_version` | Valid version string (e.g., `8.19`) |
-| `mathcomp_version` | Valid version string, or `"none"` if MathComp was not indexed |
+| `libraries` | JSON array of library identifiers; each element must be one of: `stdlib`, `mathcomp`, `stdpp`, `flocq`, `coquelicot`, `coqinterval` |
+| `library_versions` | JSON object mapping library identifier to valid version string; keys must match entries in `libraries` |
 | `created_at` | Valid ISO 8601 timestamp |
 
 ### Relationships

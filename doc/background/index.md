@@ -10,6 +10,7 @@ Surveys and analyses of the state of the art. Documents here describe what exist
 |------|---------|
 | [coq-ai-theorem-proving.md](coq-ai-theorem-proving.md) | Survey of AI-assisted theorem proving tools for Coq/Rocq; covers training data infrastructure, the broader AI proving landscape, and the growing gap between Coq and Lean in AI tooling. |
 | [coq-ecosystem-tooling.md](coq-ecosystem-tooling.md) | State of the art in Coq/Rocq tooling: IDE support, documentation, package management, CI/CD, proof visualization, and comparison with the Lean 4 ecosystem. |
+| [coq-library-ecosystem.md](coq-library-ecosystem.md) | Survey of the Coq/Rocq library ecosystem: standard libraries, mathematics, verification, meta-programming, automation, and community infrastructure; includes size, maintenance status, proof style, and cross-cutting ecosystem observations. |
 | [coq-premise-retrieval.md](coq-premise-retrieval.md) | Premise selection and lemma retrieval for Coq/Rocq: what exists today, state of the art in Lean and Isabelle, and research findings that inform future tool development. |
 
 ---

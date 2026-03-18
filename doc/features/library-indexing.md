@@ -20,12 +20,17 @@ For each declaration in a Coq library:
 ## Phased Scope
 
 ### Phase 1 (MVP)
-- Coq standard library and MathComp
+- Coq standard library (default; additional libraries available via configuration)
 - Single SQLite database, offline extraction
 - Single command to index
 
 ### Phase 2
 - User's current project (incremental re-indexing on file save)
+
+### Phase 3
+- Six supported libraries with per-library distribution (see [modular-index-distribution](modular-index-distribution.md))
+- User-configurable library selection via config file
+- Download-and-merge assembly of per-library indexes
 
 ## Extraction Method
 
@@ -41,7 +46,7 @@ The database records an **index schema version** — a version identifier writte
 
 1. **Tool upgrade → full re-index.** When the tool is updated and the index schema changes, the server detects the version mismatch on startup and triggers a full re-index from scratch. This avoids serving incorrect results from an index whose format no longer matches the tool's expectations.
 
-2. **Library update → immediate rebuild.** The index records the version of each indexed library (e.g., Coq stdlib version, MathComp version). When the server detects that an installed library version has changed since the index was built, it rebuilds the index before serving any queries. This ensures search results always reflect the current state of the user's libraries.
+2. **Library update → immediate rebuild.** The index records the version of each indexed library (e.g., Coq stdlib version, and versions of any additional configured libraries). When the server detects that an installed library version has changed since the index was built, it rebuilds the index before serving any queries. This ensures search results always reflect the current state of the user's libraries.
 
 Re-indexing is always a full rebuild. The index is a derived artifact — rebuilding from scratch is simpler and more reliable than migration, and at the scale of Coq libraries (< 50K declarations) completes in acceptable time.
 

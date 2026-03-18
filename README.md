@@ -9,6 +9,8 @@ Semantic lemma search, interactive proof exploration, and proof visualization fo
 
 Poule indexes compiled Coq `.vo` libraries into a SQLite database and provides multi-channel retrieval (structural, symbol, lexical, neural, type-based) with reciprocal rank fusion. It also supports interactive proof sessions and Mermaid-based visualization of proof states, proof trees, and dependency graphs.
 
+Six Coq libraries are available as prebuilt indexes: **stdlib**, **MathComp**, **std++**, **Flocq**, **Coquelicot**, and **CoqInterval**. Users configure which libraries to include — only selected libraries are downloaded, then merged into a single searchable index.
+
 ## Features
 
 ### Search
@@ -73,7 +75,7 @@ Make sure `~/bin` is on your `PATH` (add `export PATH="$HOME/bin:$PATH"` if need
 poule          # launches Claude Code with your project mounted
 ```
 
-Everything runs inside the container — no local Coq, Python, or opam installation required. Claude Code is baked into the image for instant startup. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the Coq search index automatically.
+Everything runs inside the container — no local Coq, Python, or opam installation required. All six supported libraries are pre-installed in the container for proof interaction. Claude Code is baked into the image for instant startup. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the Coq search index automatically.
 
 To run a one-off command instead:
 
@@ -82,6 +84,25 @@ poule coqc --version   # run a command in the container
 ```
 
 If you want to use a different project for a one-off session, just `cd` into it and run `poule` — the launcher falls back to `$PWD` when `POULE_PROJECT_DIR` is not set.
+
+### Library configuration
+
+Configure which libraries are included in your search index by editing `~/poule-libraries/config.toml`:
+
+```toml
+[index]
+libraries = ["stdlib", "mathcomp", "flocq"]
+```
+
+Valid library identifiers: `stdlib`, `mathcomp`, `stdpp`, `flocq`, `coquelicot`, `coqinterval`. When no config file exists, only `stdlib` is indexed.
+
+The container checks your configuration on every startup. If the index doesn't match your configured libraries, missing per-library indexes are downloaded and the index is rebuilt automatically. A startup message confirms which libraries are currently indexed.
+
+To override the libraries directory location, set `POULE_LIBRARIES_PATH`:
+
+```bash
+export POULE_LIBRARIES_PATH=/data/my-libraries
+```
 
 ### Persistent home directory
 
@@ -92,9 +113,18 @@ State is preserved across sessions in `~/poule-home`:
 ├── .claude/          # Claude Code settings, MCP config, auth
 ├── .ssh/             # SSH keys (copy yours here if needed)
 ├── .gitconfig        # Git configuration
-├── .zsh_history      # Shell history
-└── data/
-    └── index.db      # Coq search index
+└── .zsh_history      # Shell history
+```
+
+Library indexes and configuration are stored in `~/poule-libraries/`:
+
+```
+~/poule-libraries/
+├── config.toml       # Library selection
+├── index-stdlib.db   # Per-library index
+├── index-mathcomp.db # Per-library index (if configured)
+├── ...
+└── index.db          # Merged search index
 ```
 
 To set up git and SSH inside the container, copy your existing config:
@@ -109,16 +139,17 @@ cp -r ~/.ssh ~/poule-home/.ssh
 The launcher pulls the latest image each time it runs and checks for Claude Code updates. If a newer Claude Code version is available, it defers the update to exit time so your session isn't interrupted.
 
 ```bash
+poule --update           # Pull latest image + update library indexes
 poule --no-pull          # Skip pulling the latest image
 poule --no-auto-update   # Skip Claude Code update check
 poule --rebuild          # Force update Claude Code immediately
 ```
 
-To download a newer search index:
+To force re-download of library indexes:
 
 ```bash
-rm ~/poule-home/data/index.db
-poule    # re-download triggers automatically
+rm ~/poule-libraries/index-*.db ~/poule-libraries/index.db
+poule    # re-download triggers automatically on next startup
 ```
 
 ## Use with Claude Code

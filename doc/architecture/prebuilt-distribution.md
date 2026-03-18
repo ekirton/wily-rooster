@@ -12,21 +12,25 @@ Technical design for distributing prebuilt search indexes and neural model check
 ```
 Maintainer workflow (offline)          User workflow (online)
 
-index.db (built locally)               CLI download-index subcommand
-  │                                      │
-  │ scripts/publish-release.sh           │ resolve latest release
-  ▼                                      ▼
-GitHub Releases API                    GitHub Releases API
-  │                                      │
-  │ gh release create                    │ GET /repos/.../releases
-  │ uploads: index.db,                   │ download: manifest.json,
-  │   manifest.json,                     │   index.db,
-  │   neural-premise-selector.onnx       │   neural-premise-selector.onnx
-  ▼                                      ▼
-Release: index-v1-coq8.19-mc2.2.0     Local filesystem
-                                         ├── ./index.db
-                                         └── <data_dir>/models/
-                                               neural-premise-selector.onnx
+Per-library extraction:                Config file (~/poule-libraries/config.toml)
+  stdlib → index-stdlib.db               │
+  mathcomp → index-mathcomp.db           │ read configured libraries
+  stdpp → index-stdpp.db                 │
+  flocq → index-flocq.db                ▼
+  coquelicot → index-coquelicot.db     Download client
+  coqinterval → index-coqinterval.db     │
+  │                                      │ fetch only selected per-library DBs
+  │ scripts/publish-release.sh           ▼
+  ▼                                    ~/poule-libraries/
+GitHub Releases API                      ├── config.toml
+  │                                      ├── index-stdlib.db
+  │ gh release create                    ├── index-mathcomp.db
+  │ uploads: index-{lib}.db (×6),        ├── ...
+  │   manifest.json,                     └── index.db (merged)
+  │   neural-premise-selector.onnx            │
+  ▼                                           │ merge pipeline
+Release: index-v1-coq8.19                    ▼
+                                         MCP server / CLI (reads index.db)
 ```
 
 ## Distribution Vehicle: GitHub Releases
@@ -40,50 +44,146 @@ Release: index-v1-coq8.19-mc2.2.0     Local filesystem
 
 ## Versioning
 
-Indexes are versioned along three independent dimensions:
+Indexes are versioned along four independent dimensions:
 
 | Dimension | Source | Controls |
 |-----------|--------|----------|
 | Schema version | `index_meta.schema_version` | SQLite schema compatibility |
 | Coq version | `index_meta.coq_version` | Compiled library compatibility |
-| MathComp version | `index_meta.mathcomp_version` | Library content coverage |
+| Library set | `index_meta.libraries` | Which libraries are included |
+| Library versions | `index_meta.library_versions` | Per-library content coverage |
 
 ### Release Tag Convention
 
 ```
-index-v{schema_version}-coq{coq_version}-mc{mathcomp_version}
+index-v{schema_version}-coq{coq_version}
 ```
 
-Example: `index-v1-coq8.19-mc2.2.0`
+Example: `index-v1-coq8.19`
 
-Multiple releases can coexist for different Coq/MathComp combinations. The download client selects the most recent release whose tag starts with `index-v`.
+Multiple releases can coexist for different Coq versions. Per-library versions are recorded in the manifest, not the tag. The download client selects the most recent release whose tag starts with `index-v`.
 
 ### Release Assets
 
-Each release contains up to three assets:
+Each release contains per-library index databases, a manifest, and an optional model checkpoint:
 
 | Asset | Required | Description |
 |-------|----------|-------------|
-| `index.db` | Yes | SQLite search index |
-| `manifest.json` | Yes | Checksums and version metadata |
+| `index-stdlib.db` | Yes | Per-library index: Coq standard library |
+| `index-mathcomp.db` | Yes | Per-library index: Mathematical Components |
+| `index-stdpp.db` | Yes | Per-library index: std++ |
+| `index-flocq.db` | Yes | Per-library index: Flocq |
+| `index-coquelicot.db` | Yes | Per-library index: Coquelicot |
+| `index-coqinterval.db` | Yes | Per-library index: CoqInterval |
+| `manifest.json` | Yes | Checksums and version metadata for all libraries |
 | `neural-premise-selector.onnx` | No | INT8-quantized ONNX model checkpoint |
 
 ## Manifest Protocol
 
-Every release includes a `manifest.json` that the download client fetches first to obtain expected checksums before downloading large assets.
+Every release includes a `manifest.json` that the download client fetches first to obtain expected checksums before downloading large assets. The manifest lists all available per-library indexes with their checksums and version metadata. The download client reads the manifest first, then fetches only the per-library assets matching the user's configuration.
 
 ```json
 {
   "schema_version": "1",
-  "coq_version": "8.19",
-  "mathcomp_version": "2.2.0",
-  "index_db_sha256": "<hex>",
-  "onnx_model_sha256": "<hex-or-null>",
-  "created_at": "2026-03-17T00:00:00Z"
+  "coq_version": "8.19.2",
+  "created_at": "2026-03-18T00:00:00Z",
+  "libraries": {
+    "stdlib": {
+      "version": "8.19.2",
+      "sha256": "<hex>",
+      "asset_name": "index-stdlib.db",
+      "declarations": 12450
+    },
+    "mathcomp": {
+      "version": "2.2.0",
+      "sha256": "<hex>",
+      "asset_name": "index-mathcomp.db",
+      "declarations": 8320
+    },
+    "stdpp": {
+      "version": "1.12.0",
+      "sha256": "<hex>",
+      "asset_name": "index-stdpp.db",
+      "declarations": 5200
+    },
+    "flocq": {
+      "version": "4.2.1",
+      "sha256": "<hex>",
+      "asset_name": "index-flocq.db",
+      "declarations": 3100
+    },
+    "coquelicot": {
+      "version": "3.4.3",
+      "sha256": "<hex>",
+      "asset_name": "index-coquelicot.db",
+      "declarations": 2800
+    },
+    "coqinterval": {
+      "version": "4.11.4",
+      "sha256": "<hex>",
+      "asset_name": "index-coqinterval.db",
+      "declarations": 1500
+    }
+  },
+  "onnx_model_sha256": "<hex-or-null>"
 }
 ```
 
-All metadata values are read from the `index_meta` table in the source database.
+## Library Configuration
+
+The user's library selection is stored in a TOML configuration file in the libraries directory.
+
+### Configuration file location
+
+The libraries directory defaults to `~/poule-libraries/` and is overridable via the `POULE_LIBRARIES_PATH` environment variable. The configuration file is `config.toml` within this directory.
+
+### Configuration format
+
+```toml
+[index]
+libraries = ["stdlib", "mathcomp", "flocq"]
+```
+
+The `libraries` key is a list of library identifiers. Valid identifiers: `stdlib`, `mathcomp`, `stdpp`, `flocq`, `coquelicot`, `coqinterval`.
+
+### Default behavior
+
+When no configuration file exists, the system behaves as if `libraries = ["stdlib"]` were configured.
+
+### Validation
+
+The configuration reader rejects unknown library identifiers with an error listing valid options. An empty library list is rejected.
+
+## Index Merge Pipeline
+
+Per-library index databases are combined into a single `index.db` at install time. The merge preserves all data from each source database while resolving cross-database references.
+
+### Merge procedure
+
+1. Create a fresh `index.db` with the standard schema
+2. For each per-library database, in deterministic order:
+   a. Read all declarations and insert into the target with new auto-assigned IDs
+   b. Maintain a name-to-new-ID mapping for dependency resolution
+3. After all declarations are inserted:
+   a. For each source database, read dependency edges and resolve both source and destination to new IDs via name lookup
+   b. Insert resolved dependency edges (skip edges where either endpoint is missing — this handles cross-library dependencies gracefully)
+4. Rebuild the FTS5 index from merged declarations
+5. Recompute symbol frequencies across the merged declaration set
+6. Merge WL histogram vectors with remapped declaration IDs
+7. Write `index_meta` with:
+   - `schema_version`: from source databases (must all match)
+   - `coq_version`: from source databases (must all match)
+   - `libraries`: JSON array of included library identifiers
+   - `library_versions`: JSON object mapping library identifier to version string
+   - `created_at`: current timestamp
+
+### Cross-library dependencies
+
+When library A references declarations from library B, the dependency edges are resolved by name during merge. If library B is not in the user's configuration, those edges are silently dropped. This means the dependency graph may be incomplete when the user has not selected all libraries, but search results are not affected — dependency data is informational, not used for ranking.
+
+### Determinism
+
+The merge produces identical output given identical input databases and identical library ordering. Library ordering follows the canonical order: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval.
 
 ## Integrity Verification
 
@@ -97,37 +197,68 @@ Downloads are verified by SHA-256 checksum comparison against the manifest:
 
 The atomic rename ensures the destination path always contains either the previous complete file or the new verified file — never a partial download.
 
-## Platform Data Directory
+## Container Startup
 
-The ONNX model checkpoint is placed in a platform-specific data directory, following the convention established in [neural-retrieval.md](neural-retrieval.md):
+On every container launch, the entrypoint performs a configuration check before starting the user's session.
 
-| Platform | Path |
-|----------|------|
-| macOS | `~/Library/Application Support/poule/models/neural-premise-selector.onnx` |
-| Linux | `~/.local/share/poule/models/neural-premise-selector.onnx` |
+### Startup sequence
 
-The `index.db` file is placed in the current working directory by default (matching the existing `--db` convention).
+1. Read configuration from the libraries directory
+2. If `index.db` exists, read its `libraries` metadata key
+3. Compare the configured library set against the indexed library set
+4. If they match: proceed to session start
+5. If they differ or `index.db` is missing:
+   a. Download any per-library indexes not present in the libraries directory (with checksum verification)
+   b. Run the merge pipeline to produce a new `index.db`
+6. Display a status line listing the indexed libraries and their versions
+7. Start the MCP server and user session
 
-## CLI Integration
+### Status display
 
-The download client is exposed as a `download-index` subcommand on the existing CLI group. See the [CLI architecture](cli.md) for the full subcommand structure.
+The startup message lists each indexed library with its version:
 
 ```
-poule download-index [--output ./index.db] [--include-model] [--model-dir <path>] [--force]
+[poule] Indexed libraries: stdlib 8.19.2, mathcomp 2.2.0, flocq 4.2.1
 ```
 
-The command uses only Python standard library modules (`urllib.request`, `json`, `hashlib`) — no additional dependencies.
+## Volume Mounts
+
+The container mounts two host directories:
+
+| Mount | Host default | Container path | Purpose |
+|-------|-------------|----------------|---------|
+| Libraries | `~/poule-libraries/` (or `POULE_LIBRARIES_PATH`) | `/opt/poule-libraries` | Per-library indexes, merged index.db, config.toml |
+| Project | Current working directory | Working directory | User's Coq project source |
+
+The libraries mount persists per-library index files, the merged index, and the user's configuration across container restarts.
+
+## Developer Automation
+
+### Nightly re-index
+
+A maintainer-facing script checks for new upstream library versions, re-extracts changed libraries, and publishes updated index assets. The script:
+
+1. Updates the package manager's repository information
+2. Compares each library's installed version against the last-published version
+3. For each library with a new version: re-extracts to produce `index-{library}.db`
+4. Publishes a new release with all per-library assets and an updated manifest
+
+### Cron launcher
+
+A host-side script invokes the nightly re-index inside a container, suitable for cron scheduling. It runs the dev image with the appropriate mounts and executes the re-index script, exiting with the script's exit code.
 
 ## Publish Workflow
 
 The maintainer publishes releases via a shell script that:
 
-1. Reads version metadata from the built `index.db` via `sqlite3`
-2. Computes SHA-256 checksums
-3. Generates `manifest.json`
-4. Creates a GitHub Release via `gh release create`
-
-This is a manual process — the maintainer builds the index, verifies quality, then publishes. No CI/CD pipeline is required.
+1. Accepts one or more per-library database files
+2. Reads version metadata from each database
+3. Verifies all databases share the same schema version and Coq version
+4. Computes SHA-256 checksums of all assets
+5. Generates `manifest.json` with per-library entries
+6. Constructs release tag: `index-v{schema_version}-coq{coq_version}`
+7. If tag already exists: abort with error
+8. Creates GitHub Release via `gh release create` with all assets
 
 ## Relationship to Existing Components
 
@@ -136,4 +267,6 @@ This is a manual process — the maintainer builds the index, verifies quality, 
 | Storage (`IndexWriter`/`IndexReader`) | The distributed `index.db` is produced by `IndexWriter` and consumed by `IndexReader` — no changes to storage interfaces |
 | Neural channel | The distributed ONNX model is the same checkpoint loaded by `NeuralEncoder.load()` — no changes to the encoder interface |
 | MCP server | Consumes `index.db` via `--db` option — unaware of how the database was obtained |
-| Extraction pipeline | Produces `index.db` — the publish script packages its output; the download command is an alternative to running extraction |
+| Extraction pipeline | Produces per-library `index-{library}.db` files — the publish script packages its output; the download command is an alternative to running extraction |
+| Config module | Reads `config.toml` from libraries directory; provides library list to download client and startup check |
+| Merge pipeline | Combines per-library databases into single `index.db`; transparent to downstream consumers |

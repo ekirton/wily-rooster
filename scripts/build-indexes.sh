@@ -3,7 +3,7 @@ set -euo pipefail
 
 ALL_LIBRARIES="stdlib,mathcomp,stdpp,flocq,coquelicot,coqinterval"
 LIBRARIES="$ALL_LIBRARIES"
-OUTPUT_DIR="."
+OUTPUT_DIR="/data"
 
 usage() {
     echo "Usage: $(basename "$0") [--libraries lib1,lib2,...] [--output-dir DIR]" >&2
@@ -12,7 +12,7 @@ usage() {
     echo "" >&2
     echo "Options:" >&2
     echo "  --libraries   Comma-separated list of libraries (default: all 6)" >&2
-    echo "  --output-dir  Directory for output databases (default: .)" >&2
+    echo "  --output-dir  Directory for output databases (default: /data)" >&2
     echo "" >&2
     echo "Libraries: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval" >&2
     exit 1

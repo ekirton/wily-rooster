@@ -10,6 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import anyio
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, Tool, TextContent
@@ -1312,42 +1314,53 @@ async def run_server(db_path: Path, log_level: str = "INFO"):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
-async def run_server_sse(
+async def run_server_http(
     db_path: Path,
     host: str = "127.0.0.1",
     port: int = 3000,
     log_level: str = "INFO",
 ):
-    """Start the MCP server with SSE transport (HTTP daemon mode).
+    """Start the MCP server with streamable-HTTP transport.
 
-    Listens on ``http://<host>:<port>/sse`` for Claude Code connections.
+    Listens on ``http://<host>:<port>/mcp`` for Claude Code connections.
     The server runs as a persistent background process; Claude Code reconnects
-    to it via the ``url`` field in mcp.json rather than spawning a subprocess.
+    to it via the ``url`` field in settings.json rather than spawning a
+    subprocess.
     """
     import uvicorn
-    from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
     from starlette.applications import Starlette
-    from starlette.responses import Response
-    from starlette.routing import Mount, Route
+    from starlette.requests import Request
+    from starlette.routing import Route
 
     ctx = await _init_context(db_path, log_level)
     server = _build_server(ctx)
 
-    sse = SseServerTransport("/messages/")
+    async def handle_mcp(request: Request):
+        transport = StreamableHTTPServerTransport(mcp_session_id=None)
+        async with transport.connect() as (read_stream, write_stream):
+            async with anyio.create_task_group() as tg:
+                async def run_transport():
+                    await transport.handle_request(
+                        request.scope, request.receive, request._send,
+                    )
 
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await server.run(streams[0], streams[1], server.create_initialization_options())
-        return Response()
+                async def run_mcp():
+                    await server.run(
+                        read_stream, write_stream,
+                        server.create_initialization_options(),
+                    )
+
+                tg.start_soon(run_transport)
+                tg.start_soon(run_mcp)
 
     starlette_app = Starlette(routes=[
-        Route("/sse", endpoint=handle_sse),
-        Mount("/messages/", app=sse.handle_post_message),
+        Route("/mcp", endpoint=handle_mcp, methods=["GET", "POST", "DELETE"]),
     ])
 
     config = uvicorn.Config(starlette_app, host=host, port=port, log_level=log_level.lower())
     uv_server = uvicorn.Server(config)
-    logger.info("Poule MCP server (SSE) listening on %s:%d", host, port)
+    logger.info("Poule MCP server (streamable-http) listening on %s:%d", host, port)
     await uv_server.serve()
 
 
@@ -1368,8 +1381,8 @@ def main():
     parser.add_argument(
         "--transport",
         default="stdio",
-        choices=["stdio", "sse"],
-        help="Transport protocol: stdio (default) or sse (HTTP daemon)",
+        choices=["stdio", "sse", "streamable-http"],
+        help="Transport protocol: stdio (default), streamable-http, or sse (legacy)",
     )
     parser.add_argument(
         "--host",
@@ -1383,8 +1396,8 @@ def main():
         help="SSE server port (default: 3000)",
     )
     args = parser.parse_args()
-    if args.transport == "sse":
-        asyncio.run(run_server_sse(args.db, args.host, args.port, args.log_level))
+    if args.transport in ("sse", "streamable-http"):
+        asyncio.run(run_server_http(args.db, args.host, args.port, args.log_level))
     else:
         asyncio.run(run_server(args.db, args.log_level))
 

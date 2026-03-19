@@ -244,11 +244,17 @@ done
 
 echo "Creating release: ${TAG_LIBRARIES}"
 
+# Stage assets in a temp directory with correct filenames (gh release create
+# #displayname syntax is unreliable across gh versions).
+upload_dir=$(mktemp -d /tmp/poule-publish.XXXXXX)
+
 lib_assets=()
 for i in "${!DB_PATHS[@]}"; do
-    lib_assets+=("${DB_PATHS[$i]}#index-${LIB_NAMES[$i]}.db")
+    cp "${DB_PATHS[$i]}" "$upload_dir/index-${LIB_NAMES[$i]}.db"
+    lib_assets+=("$upload_dir/index-${LIB_NAMES[$i]}.db")
 done
-lib_assets+=("$libraries_manifest_tmp#manifest.json")
+cp "$libraries_manifest_tmp" "$upload_dir/manifest.json"
+lib_assets+=("$upload_dir/manifest.json")
 
 gh release create "$TAG_LIBRARIES" \
     "${lib_assets[@]}" \
@@ -259,10 +265,15 @@ gh release create "$TAG_LIBRARIES" \
 
 echo "Creating release: ${TAG_MERGED}"
 
-merged_assets=("${INDEX_DB}#index.db" "$merged_manifest_tmp#manifest.json")
+# Re-stage manifest for merged release (separate copy to avoid conflicts)
+merged_upload_dir=$(mktemp -d /tmp/poule-publish-merged.XXXXXX)
+cp "${INDEX_DB}" "$merged_upload_dir/index.db"
+cp "$merged_manifest_tmp" "$merged_upload_dir/manifest.json"
+merged_assets=("$merged_upload_dir/index.db" "$merged_upload_dir/manifest.json")
 
 if [[ -n "$MODEL_PATH" ]]; then
-    merged_assets+=("$MODEL_PATH#neural-premise-selector.onnx")
+    cp "$MODEL_PATH" "$merged_upload_dir/neural-premise-selector.onnx"
+    merged_assets+=("$merged_upload_dir/neural-premise-selector.onnx")
 fi
 
 gh release create "$TAG_MERGED" \
@@ -272,7 +283,7 @@ gh release create "$TAG_MERGED" \
 
 # --- Cleanup ---
 
-rm -f "$libraries_manifest_tmp" "$merged_manifest_tmp"
+rm -rf "$libraries_manifest_tmp" "$merged_manifest_tmp" "$upload_dir" "$merged_upload_dir"
 
 echo
 echo "Releases created:"

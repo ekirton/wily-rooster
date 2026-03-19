@@ -7,11 +7,14 @@ specification/proof-session.md.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, Coroutine, Optional
+
+logger = logging.getLogger(__name__)
 
 from Poule.session.errors import (
     BACKEND_CRASHED,
@@ -410,6 +413,13 @@ class SessionManager:
             for sid in to_remove:
                 ss = self._registry.pop(sid, None)
                 if ss is not None:
+                    idle_duration = now - ss.last_active_at
+                    logger.info(
+                        "Session timed out: session_id=%s proof_name=%s idle_duration=%s",
+                        sid,
+                        ss.proof_name,
+                        idle_duration,
+                    )
                     self._expired_ids.add(sid)
                     if ss.coq_backend is not None and ss.state == "active":
                         await ss.coq_backend.shutdown()
@@ -429,6 +439,24 @@ class SessionManager:
         if ss is not None:
             ss.state = "crashed"
             ss.coq_backend = None
+
+    async def _on_backend_crash(
+        self,
+        session_id: str,
+        exit_code: int | None = None,
+        signal: int | None = None,
+    ) -> None:
+        """Record a backend crash: mark session crashed and log required fields.
+
+        Spec §4.7: Log session ID, exit code, and signal (if available).
+        """
+        logger.warning(
+            "Backend crashed: session_id=%s exit_code=%s signal=%s",
+            session_id,
+            exit_code,
+            signal,
+        )
+        self._mark_crashed(session_id)
 
     def _set_last_active(self, session_id: str, dt: datetime) -> None:
         ss = self._registry.get(session_id)

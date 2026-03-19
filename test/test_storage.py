@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -759,3 +761,431 @@ class TestGetConstrTrees:
         trees = reader.get_constr_trees([])
 
         assert trees == {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Concurrency (§4.2–4.3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestConcurrentReaders:
+    """Multiple readers may open the same finalized database simultaneously
+    from different threads without errors (§4.3)."""
+
+    def test_multiple_readers_same_db_no_errors(self, populated_db):
+        """Open 3 readers in parallel threads, run queries from each,
+        assert no exceptions (§4.2–4.3)."""
+        db_path, _ids = populated_db
+        errors = []
+
+        def open_and_query():
+            try:
+                r = IndexReader.open(db_path)
+                r.load_symbol_frequencies()
+                r.get_declaration("Coq.Init.Nat.add")
+                r.close()
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=open_and_query) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent readers raised: {errors}"
+
+    def test_multiple_threads_open_same_db(self, populated_db):
+        db_path, _ids = populated_db
+        errors = []
+
+        def open_and_query():
+            try:
+                r = IndexReader.open(db_path)
+                # Exercise a real query to confirm the connection is usable.
+                r.load_symbol_frequencies()
+                r.close()
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=open_and_query) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent readers raised: {errors}"
+
+
+class TestReaderWhileWriterOpen:
+    """A reader opening the database while a writer is still writing shall
+    either block until the writer commits or raise a clean StorageError —
+    not silently return corrupt data (§4.2–4.3)."""
+
+    def test_reader_cannot_open_during_active_write(self, tmp_db_path):
+        """Open a writer, attempt to open a reader on the same path; should
+        either block cleanly or raise a clear error (not corrupt data)."""
+        writer = IndexWriter.create(tmp_db_path)
+        writer.insert_declarations([_sample_declaration()])
+        writer.write_meta("schema_version", "1")
+        writer.write_meta("coq_version", "8.19")
+        writer.write_meta("mathcomp_version", "2.2.0")
+        writer.write_meta("created_at", "2026-03-16T12:00:00Z")
+
+        try:
+            r = IndexReader.open(tmp_db_path)
+            # If open succeeds the reader must be closable without crash.
+            r.close()
+        except StorageError:
+            pass  # clean typed error — acceptable
+        except Exception as exc:
+            pytest.fail(
+                f"Opening DB while writer is live raised unacceptable "
+                f"exception type {type(exc).__name__}: {exc}"
+            )
+        finally:
+            writer.finalize()
+
+    def test_reader_before_finalize_raises_clean_error_or_succeeds(
+        self, tmp_db_path
+    ):
+        writer = IndexWriter.create(tmp_db_path)
+        writer.insert_declarations([_sample_declaration()])
+        # Write meta so the schema_version check passes if the reader
+        # manages to connect at all.
+        writer.write_meta("schema_version", "1")
+        writer.write_meta("coq_version", "8.19")
+        writer.write_meta("mathcomp_version", "2.2.0")
+        writer.write_meta("created_at", "2026-03-16T12:00:00Z")
+
+        # Attempt to open the database while the writer's connection is still
+        # live (not yet finalized).  The outcome must be one of:
+        #   (a) StorageError / IndexVersionError — a clean, typed exception
+        #   (b) Successful open (SQLite WAL or shared-cache allows this)
+        # What is NOT acceptable: an unhandled exception outside the error
+        # hierarchy (e.g. raw sqlite3.DatabaseError with corrupt data).
+        try:
+            r = IndexReader.open(tmp_db_path)
+            # If open succeeds the reader must at least be usable or closable
+            # without an unhandled crash.
+            r.close()
+        except StorageError:
+            pass  # (a) — clean typed error, acceptable
+        except Exception as exc:
+            pytest.fail(
+                f"Opening DB while writer is live raised an unacceptable "
+                f"exception type {type(exc).__name__}: {exc}"
+            )
+        finally:
+            writer.finalize()
+
+
+class TestQueryAfterClose:
+    """Calling a query method after close() raises StorageError (§4.3)."""
+
+    def test_get_declaration_after_close_raises_storage_error(
+        self, populated_db
+    ):
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+
+        with pytest.raises(StorageError):
+            r.get_declaration("Coq.Init.Nat.add")
+
+    def test_search_fts_after_close_raises_storage_error(self, populated_db):
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+
+        with pytest.raises(StorageError):
+            r.search_fts("add", limit=10)
+
+    def test_load_declarations_after_close_raises_storage_error(
+        self, populated_db
+    ):
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+
+        with pytest.raises(StorageError):
+            r.load_declaration_node_counts()
+
+    def test_close_is_idempotent(self, populated_db):
+        """Calling close() twice must not raise any exception (§4.3)."""
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+        r.close()  # second close must be a no-op
+
+    def test_load_wl_histograms_after_close_raises_storage_error(
+        self, populated_db
+    ):
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+
+        with pytest.raises(StorageError):
+            r.load_wl_histograms()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 8. Connection lifecycle — close() idempotency
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestCloseIdempotent:
+    """close() is idempotent: calling it twice does not raise (§4.3)."""
+
+    def test_double_close_does_not_raise(self, populated_db):
+        db_path, _ids = populated_db
+        r = IndexReader.open(db_path)
+        r.close()
+        # Second close must not raise any exception.
+        r.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 9. load_embeddings — missing table and empty table (§4.3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLoadEmbeddingsMissingTable:
+    """load_embeddings() returns (None, None) when the embeddings table does
+    not exist (§4.3)."""
+
+    def test_returns_none_none_when_table_missing(self, populated_db):
+        """Open reader on DB without embeddings table; load_embeddings()
+        returns (None, None) (§4.3)."""
+        db_path, _ids = populated_db
+        with IndexReader.open(db_path) as r:
+            matrix, id_map = r.load_embeddings()
+
+        assert matrix is None
+        assert id_map is None
+
+    def test_returns_none_none_when_table_absent(self, populated_db):
+        # The populated_db fixture uses _populate_minimal_db which never
+        # creates the optional embeddings table.
+        db_path, _ids = populated_db
+        with IndexReader.open(db_path) as r:
+            matrix, id_map = r.load_embeddings()
+
+        assert matrix is None
+        assert id_map is None
+
+
+class TestLoadEmbeddingsEmptyTable:
+    """load_embeddings() returns (None, None) when the embeddings table
+    exists but contains no rows (§4.3)."""
+
+    def test_returns_none_none_when_table_empty(self, tmp_db_path):
+        writer = IndexWriter.create(tmp_db_path)
+        writer.insert_declarations([_sample_declaration()])
+        writer.write_meta("schema_version", "1")
+        writer.write_meta("coq_version", "8.19")
+        writer.write_meta("mathcomp_version", "2.2.0")
+        writer.write_meta("created_at", "2026-03-16T12:00:00Z")
+        writer.finalize()
+
+        # Add the embeddings table manually (empty) after finalization.
+        conn = sqlite3.connect(str(tmp_db_path))
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS embeddings "
+            "(decl_id INTEGER PRIMARY KEY, vector BLOB NOT NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+        with IndexReader.open(tmp_db_path) as r:
+            matrix, id_map = r.load_embeddings()
+
+        assert matrix is None
+        assert id_map is None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 10. Batch FK violation (§4.2)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDependencyFKViolation:
+    """Inserting dependency edges before the referenced declarations exist
+    raises an appropriate error (FK constraint) (§4.2)."""
+
+    def test_fk_violation_raises_on_nonexistent_src(self, tmp_db_path):
+        writer = IndexWriter.create(tmp_db_path)
+        # Insert one declaration; reference a non-existent ID (99999) as src.
+        ids = writer.insert_declarations([
+            _sample_declaration(name="A.dst", module="A"),
+        ])
+
+        with pytest.raises((sqlite3.IntegrityError, StorageError)):
+            writer.insert_dependencies([
+                {"src": 99999, "dst": ids["A.dst"], "relation": "uses"},
+            ])
+        writer.finalize()
+
+    def test_fk_violation_raises_on_nonexistent_dst(self, tmp_db_path):
+        writer = IndexWriter.create(tmp_db_path)
+        # Insert one declaration; reference a non-existent ID (99999) as dst.
+        ids = writer.insert_declarations([
+            _sample_declaration(name="A.src", module="A"),
+        ])
+
+        with pytest.raises((sqlite3.IntegrityError, StorageError)):
+            writer.insert_dependencies([
+                {"src": ids["A.src"], "dst": 99999, "relation": "uses"},
+            ])
+        writer.finalize()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 11. FTS5 special characters (§4.3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSearchFtsSpecialCharacters:
+    """search_fts() handles queries containing FTS5 special characters
+    without crashing — either sanitizes or raises a clean StorageError
+    (§4.3)."""
+
+    _SPECIAL_QUERIES = [
+        '"unclosed quote',          # unmatched double-quote
+        "AND OR NOT",               # bare FTS5 boolean operators
+        "(unmatched paren",         # unmatched open parenthesis
+        "hello) world",             # unmatched close parenthesis
+        "NEAR/0()",                 # malformed NEAR clause
+        '"phrase" AND OR',          # mixed phrase + dangling operator
+    ]
+
+    @pytest.mark.parametrize("query", _SPECIAL_QUERIES)
+    def test_special_query_does_not_crash(self, reader, query):
+        """A malformed FTS5 query must either return a result list or raise
+        StorageError.  An unhandled sqlite3.OperationalError propagating
+        as-is is not acceptable."""
+        try:
+            results = reader.search_fts(query, limit=10)
+            # If the implementation sanitizes the query and returns results,
+            # the result must still be a list.
+            assert isinstance(results, list)
+        except StorageError:
+            pass  # clean typed error — acceptable
+
+    def test_fts_query_with_double_quotes_raises_storage_error_not_raw(
+        self, reader
+    ):
+        """A query with an unmatched double-quote causes an FTS5 parse error.
+        The implementation must raise StorageError, not sqlite3.OperationalError
+        (§4.3)."""
+        malformed = '"broken'
+        try:
+            results = reader.search_fts(malformed, limit=10)
+            assert isinstance(results, list)
+        except StorageError:
+            pass  # clean typed error — acceptable
+        except sqlite3.OperationalError as exc:
+            pytest.fail(
+                f"search_fts propagated raw sqlite3.OperationalError instead "
+                f"of StorageError: {exc}"
+            )
+
+    def test_fts_query_empty_string_handled_gracefully(self, reader):
+        """An empty string query must not crash — return an empty list (§4.3)."""
+        results = reader.search_fts("", limit=10)
+        assert isinstance(results, list)
+        assert results == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 12. JSON deserialization robustness — load_inverted_index (§4.3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestLoadInvertedIndexMalformedJson:
+    """load_inverted_index() handles a declaration with malformed symbol_set
+    JSON gracefully — it either skips the row or raises StorageError; it
+    must not propagate an unhandled json.JSONDecodeError (§4.3)."""
+
+    def test_malformed_symbol_set_json_handled_gracefully(self, tmp_db_path):
+        """Insert a declaration with symbol_set = 'not valid json' in the DB;
+        load_inverted_index() should not raise unhandled exception (§4.3)."""
+        writer = IndexWriter.create(tmp_db_path)
+        writer.insert_declarations([
+            _sample_declaration(name="Valid.decl", module="Valid", symbol_set=["Valid.decl"]),
+        ])
+        writer.write_meta("schema_version", "1")
+        writer.write_meta("coq_version", "8.19")
+        writer.write_meta("mathcomp_version", "2.2.0")
+        writer.write_meta("created_at", "2026-03-16T12:00:00Z")
+        writer.finalize()
+
+        # Inject malformed JSON directly into the DB, bypassing the writer.
+        conn = sqlite3.connect(str(tmp_db_path))
+        conn.execute(
+            "INSERT INTO declarations "
+            "(name, module, kind, statement, type_expr, node_count, symbol_set) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("Bad.decl", "Bad", "definition", "stmt", "Prop", 1, "NOT VALID JSON"),
+        )
+        conn.commit()
+        conn.close()
+
+        with IndexReader.open(tmp_db_path) as r:
+            try:
+                inv = r.load_inverted_index()
+                # Skipped malformed rows — good decl must still appear.
+                assert isinstance(inv, dict)
+                assert "Valid.decl" in inv
+            except StorageError:
+                pass  # clean typed error — also acceptable
+            except json.JSONDecodeError as exc:
+                pytest.fail(
+                    f"load_inverted_index propagated unhandled json.JSONDecodeError: {exc}"
+                )
+
+    def test_malformed_symbol_set_does_not_crash(self, tmp_db_path):
+        # Build a database with one well-formed and one malformed symbol_set.
+        writer = IndexWriter.create(tmp_db_path)
+        ids = writer.insert_declarations([
+            _sample_declaration(
+                name="Good.decl",
+                module="Good",
+                symbol_set=["Good.decl"],
+            )
+        ])
+        writer.write_meta("schema_version", "1")
+        writer.write_meta("coq_version", "8.19")
+        writer.write_meta("mathcomp_version", "2.2.0")
+        writer.write_meta("created_at", "2026-03-16T12:00:00Z")
+        writer.finalize()
+
+        # Directly corrupt the symbol_set of one row bypassing the writer.
+        conn = sqlite3.connect(str(tmp_db_path))
+        conn.execute(
+            "INSERT INTO declarations "
+            "(name, module, kind, statement, type_expr, node_count, symbol_set) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "Bad.decl",
+                "Bad",
+                "definition",
+                "bad statement",
+                "Prop",
+                1,
+                "NOT VALID JSON [[[",  # intentionally malformed
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        with IndexReader.open(tmp_db_path) as r:
+            try:
+                inv = r.load_inverted_index()
+                # If implementation skips malformed rows, the good row must
+                # still be present.
+                assert isinstance(inv, dict)
+                # "Good.decl" symbol must still appear.
+                assert "Good.decl" in inv
+            except StorageError:
+                pass  # clean typed error — acceptable

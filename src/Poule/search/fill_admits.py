@@ -275,6 +275,18 @@ async def _process_admit(
             error=f"{exc.code}: {exc.message}",
         )
 
+    except Exception as exc:  # noqa: BLE001
+        # Unexpected crash (e.g. network error, serialization bug) — isolate per §4.3
+        return AdmitResult(
+            proof_name=admit.proof_name,
+            admit_index=admit.admit_index,
+            line_number=admit.line_number,
+            status="unfilled",
+            replacement=None,
+            search_stats=None,
+            error=f"Unexpected error: {exc}",
+        )
+
     finally:
         # 5. Close session (spec §4.3 step 5)
         if session_id is not None:

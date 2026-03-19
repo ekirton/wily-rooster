@@ -16,6 +16,7 @@ Import paths under test:
 from __future__ import annotations
 
 import json
+import logging
 from unittest.mock import MagicMock, patch, AsyncMock
 
 import pytest
@@ -1849,3 +1850,219 @@ class TestSessionErrorTranslation:
         assert result["isError"] is True
         text = json.loads(result["content"][0]["text"])
         assert text["error"]["code"] == "BACKEND_CRASHED"
+
+
+# ===========================================================================
+# TACTIC_ERROR enriched response (Spec §4.9)
+# ===========================================================================
+
+class TestTacticErrorEnrichedResponse:
+    """§4.9: TACTIC_ERROR response includes both the error object and the
+    unchanged ProofState so the LLM can report both without a separate
+    observe_proof_state call.
+
+    The session manager raises a SessionError with code TACTIC_ERROR; the
+    session manager also attaches the unchanged state to the exception so
+    the handler can include it in the response body.
+    """
+
+    def _make_tactic_session_error(self, step_index=0, message="Tactic failed: No such tactic."):
+        """Build a SessionError for TACTIC_ERROR that carries the unchanged state."""
+        SessionError = _import_session_error()
+        exc = SessionError("TACTIC_ERROR", message)
+        # Attach the unchanged proof state so the handler can embed it
+        exc.state = _make_proof_state(step_index=step_index)
+        return exc
+
+    @pytest.mark.asyncio
+    async def test_tactic_error_response_includes_unchanged_proof_state(self):
+        """When submit_tactic raises TACTIC_ERROR with attached state, the JSON
+        body includes both the error object and the unchanged ProofState fields
+        (step_index, goals, is_complete).  Spec §4.9."""
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.submit_tactic.side_effect = (
+            self._make_tactic_session_error(step_index=2)
+        )
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="bad_tactic.")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        assert text["error"]["code"] == "TACTIC_ERROR"
+        # §4.9: response body includes the unchanged ProofState
+        assert "state" in text["error"]
+        state = text["error"]["state"]
+        assert state["step_index"] == 2
+        assert "goals" in state
+        assert "is_complete" in state
+
+    @pytest.mark.asyncio
+    async def test_tactic_error_is_error_true(self):
+        """TACTIC_ERROR response sets isError=True (§4.9)."""
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        ctx.session_manager.submit_tactic.side_effect = (
+            self._make_tactic_session_error(
+                message="Tactic failed: The reference bad_tactic was not found."
+            )
+        )
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="bad_tactic.")
+
+        assert result["isError"] is True
+
+    @pytest.mark.asyncio
+    async def test_tactic_error_state_is_complete_field_present(self):
+        """§4.9: is_complete field is present in the embedded state and
+        reflects the unchanged proof state (False when proof is not done)."""
+        (_, _, _, _, _, _, handle_submit, *_) = _import_proof_handlers()
+        ctx = _make_proof_handler_ctx()
+        exc = _import_session_error()("TACTIC_ERROR", "Tactic failed: No matching clauses for induction.")
+        exc.state = _make_proof_state(step_index=1, is_complete=False)
+        ctx.session_manager.submit_tactic.side_effect = exc
+
+        result = await handle_submit(ctx, session_id="abc123", tactic="induction bad.")
+
+        assert result["isError"] is True
+        text = json.loads(result["content"][0]["text"])
+        state = text["error"]["state"]
+        assert state["is_complete"] is False
+
+
+# ===========================================================================
+# Diagram write error handling (Spec §4.4, diagram-file-output §5)
+# ===========================================================================
+
+def _import_viz_handlers():
+    from Poule.server.handlers import (
+        handle_visualize_proof_state,
+        handle_visualize_proof_tree,
+        handle_visualize_proof_sequence,
+    )
+    return handle_visualize_proof_state, handle_visualize_proof_tree, handle_visualize_proof_sequence
+
+
+def _make_mock_renderer():
+    """Create a mock Mermaid renderer."""
+    renderer = MagicMock()
+    renderer.render_proof_state.return_value = "flowchart TD\n    s0g0[\"n = n\"]"
+    renderer.render_proof_tree.return_value = "flowchart TD\n    s0g0[\"n = n\"]"
+    renderer.render_proof_sequence.return_value = []
+    return renderer
+
+
+def _make_mock_session_manager_for_viz():
+    """Create a mock session manager that returns a proof state."""
+    mgr = AsyncMock()
+    state = _make_proof_state(step_index=0)
+    mgr.observe_state.return_value = state
+    mgr.get_state_at_step.return_value = state
+
+    # Build a minimal ProofTrace for tree/sequence tests
+    from Poule.session.types import ProofTrace, TraceStep
+    complete_state = _make_proof_state(step_index=1, is_complete=True)
+    trace = ProofTrace(
+        schema_version=1,
+        session_id="abc123",
+        proof_name="P",
+        file_path="/f.v",
+        total_steps=1,
+        steps=[
+            TraceStep(step_index=0, tactic=None, state=state),
+            TraceStep(step_index=1, tactic="reflexivity.", state=complete_state),
+        ],
+    )
+    mgr.extract_trace.return_value = trace
+    return mgr
+
+
+class TestDiagramWriteErrorHandling:
+    """§4.4 + diagram-file-output §5: When the diagram directory is unwritable,
+    the visualization handler catches the exception, logs at WARNING, and still
+    returns a valid response — the error is not propagated."""
+
+    @pytest.mark.asyncio
+    async def test_unwritable_dir_does_not_propagate_for_proof_state(self, caplog):
+        """visualize_proof_state: OSError from write_diagram_html is caught and
+        logged at WARNING; the handler returns a valid JSON response.
+
+        write_diagram_html is imported locally inside the handler, so we patch
+        the function in its defining module (diagram_writer)."""
+        handle_visualize_proof_state, _, _ = _import_viz_handlers()
+        mgr = _make_mock_session_manager_for_viz()
+        renderer = _make_mock_renderer()
+
+        with patch(
+            "Poule.server.diagram_writer.write_diagram_html",
+            side_effect=OSError("Permission denied"),
+        ):
+            with caplog.at_level(logging.WARNING):
+                result_json = await handle_visualize_proof_state(
+                    session_id="abc123",
+                    session_manager=mgr,
+                    renderer=renderer,
+                    diagram_dir="/unwritable/dir",
+                )
+
+        # Handler must return a valid response, not raise
+        data = json.loads(result_json)
+        assert "error" not in data
+        assert "mermaid" in data
+        assert "step_index" in data
+
+        # The write failure must be logged at WARNING
+        assert any(
+            record.levelno == logging.WARNING for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_unwritable_dir_does_not_propagate_for_proof_tree(self, caplog):
+        """visualize_proof_tree: OSError from write_diagram_html is caught and
+        logged at WARNING; the handler returns a valid JSON response."""
+        _, handle_visualize_proof_tree, _ = _import_viz_handlers()
+        mgr = _make_mock_session_manager_for_viz()
+        renderer = _make_mock_renderer()
+
+        with patch(
+            "Poule.server.diagram_writer.write_diagram_html",
+            side_effect=OSError("Read-only file system"),
+        ):
+            with caplog.at_level(logging.WARNING):
+                result_json = await handle_visualize_proof_tree(
+                    session_id="abc123",
+                    session_manager=mgr,
+                    renderer=renderer,
+                    diagram_dir="/unwritable/dir",
+                )
+
+        data = json.loads(result_json)
+        assert "error" not in data
+        assert "mermaid" in data
+        assert "total_steps" in data
+
+        assert any(
+            record.levelno == logging.WARNING for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_diagram_dir_none_skips_write_no_side_effect(self):
+        """When diagram_dir is None, no write attempt is made and the handler
+        returns normally."""
+        handle_visualize_proof_state, _, _ = _import_viz_handlers()
+        mgr = _make_mock_session_manager_for_viz()
+        renderer = _make_mock_renderer()
+
+        with patch(
+            "Poule.server.diagram_writer.write_diagram_html",
+        ) as mock_write:
+            result_json = await handle_visualize_proof_state(
+                session_id="abc123",
+                session_manager=mgr,
+                renderer=renderer,
+                diagram_dir=None,
+            )
+
+        mock_write.assert_not_called()
+        data = json.loads(result_json)
+        assert "mermaid" in data

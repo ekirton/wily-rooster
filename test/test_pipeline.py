@@ -1203,3 +1203,354 @@ class TestCoqLspParserContract:
         assert parser._proc is None
         # The real process should have terminated
         assert proc.poll() is not None
+
+
+# ---------------------------------------------------------------------------
+# 18. TED tree-size boundary (spec §4.7, condition: both ≤ 50)
+# ---------------------------------------------------------------------------
+
+
+class TestTEDBoundaryExact:
+    """TED is included when both query and candidate have ≤50 nodes (boundary ≤50).
+    Exactly 50 nodes on both sides → TED used.
+    Exactly 51 nodes on either side → TED skipped."""
+
+    @patch("Poule.pipeline.search.ted_similarity")
+    @patch("Poule.pipeline.search.collapse_match")
+    @patch("Poule.pipeline.search.jaccard_similarity")
+    @patch("Poule.pipeline.search.extract_consts")
+    def test_exactly_50_nodes_uses_ted(
+        self, mock_extract, mock_jaccard, mock_collapse, mock_ted
+    ):
+        """Both query=50 and candidate=50: boundary is ≤50, so TED is computed.
+        Score = 0.15*wl + 0.40*ted + 0.30*collapse + 0.15*jaccard."""
+        ctx = _mock_context()
+        query_tree = MagicMock()
+        query_tree.node_count = 50  # exactly at boundary
+
+        candidate_tree = MagicMock()
+        candidate_tree.node_count = 50  # exactly at boundary
+        ctx.reader.get_constr_trees.return_value = {1: candidate_tree}
+
+        mock_extract.return_value = set()
+        mock_jaccard.return_value = 1.0
+        mock_collapse.return_value = 1.0
+        mock_ted.return_value = 1.0
+
+        candidates_with_wl = [(1, 1.0)]
+
+        scored = score_candidates(query_tree, candidates_with_wl, ctx)
+
+        # TED must be called — both sides at boundary (≤50)
+        mock_ted.assert_called_once()
+        assert len(scored) == 1
+        decl_id, structural_score = scored[0]
+        # Score = 0.15*1.0 + 0.40*1.0 + 0.30*1.0 + 0.15*1.0 = 1.0
+        assert structural_score == pytest.approx(1.0, abs=1e-6)
+
+    @patch("Poule.pipeline.search.ted_similarity")
+    @patch("Poule.pipeline.search.collapse_match")
+    @patch("Poule.pipeline.search.jaccard_similarity")
+    @patch("Poule.pipeline.search.extract_consts")
+    def test_exactly_51_nodes_skips_ted(
+        self, mock_extract, mock_jaccard, mock_collapse, mock_ted
+    ):
+        """Query=51 (> 50): TED is skipped.
+        Score = 0.25*wl + 0.50*collapse + 0.25*jaccard."""
+        ctx = _mock_context()
+        query_tree = MagicMock()
+        query_tree.node_count = 51  # one over boundary
+
+        candidate_tree = MagicMock()
+        candidate_tree.node_count = 30
+        ctx.reader.get_constr_trees.return_value = {1: candidate_tree}
+
+        mock_extract.return_value = set()
+        mock_jaccard.return_value = 0.4
+        mock_collapse.return_value = 0.8
+        mock_ted.return_value = 0.99  # should not be used
+
+        candidates_with_wl = [(1, 0.6)]
+
+        scored = score_candidates(query_tree, candidates_with_wl, ctx)
+
+        # TED must NOT be called — query side exceeds boundary
+        mock_ted.assert_not_called()
+        decl_id, structural_score = scored[0]
+        # Score = 0.25*0.6 + 0.50*0.8 + 0.25*0.4 = 0.15 + 0.40 + 0.10 = 0.65
+        assert structural_score == pytest.approx(0.65, abs=1e-6)
+
+    @patch("Poule.pipeline.search.ted_similarity")
+    @patch("Poule.pipeline.search.collapse_match")
+    @patch("Poule.pipeline.search.jaccard_similarity")
+    @patch("Poule.pipeline.search.extract_consts")
+    def test_asymmetric_query_49_candidate_51_skips_ted(
+        self, mock_extract, mock_jaccard, mock_collapse, mock_ted
+    ):
+        """Asymmetric case: query=49 (≤50) but candidate=51 (>50) → TED skipped.
+        Condition requires BOTH to be ≤50; one side over the limit is enough to skip."""
+        ctx = _mock_context()
+        query_tree = MagicMock()
+        query_tree.node_count = 49  # within boundary
+
+        candidate_tree = MagicMock()
+        candidate_tree.node_count = 51  # exceeds boundary
+        ctx.reader.get_constr_trees.return_value = {1: candidate_tree}
+
+        mock_extract.return_value = set()
+        mock_jaccard.return_value = 0.5
+        mock_collapse.return_value = 0.6
+        mock_ted.return_value = 0.99  # should not be used
+
+        candidates_with_wl = [(1, 0.8)]
+
+        scored = score_candidates(query_tree, candidates_with_wl, ctx)
+
+        # TED must NOT be called — candidate side exceeds boundary
+        mock_ted.assert_not_called()
+        decl_id, structural_score = scored[0]
+        # Score = 0.25*0.8 + 0.50*0.6 + 0.25*0.5 = 0.20 + 0.30 + 0.125 = 0.625
+        assert structural_score == pytest.approx(0.625, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# 19. RRF fusion with missing neural channel (spec §4.4 step 5-6)
+# ---------------------------------------------------------------------------
+
+
+class TestRRFFusionMissingNeuralChannel:
+    """When the neural channel is unavailable, search_by_type fuses only 3
+    channels (structural, symbol, lexical).  The neural channel is omitted when
+    ctx.neural_encoder is None OR ctx.embedding_index is None (spec §4.4)."""
+
+    @patch("Poule.pipeline.search.rrf_fuse")
+    @patch("Poule.pipeline.search.fts_search")
+    @patch("Poule.pipeline.search.fts_query")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_neural_encoder_none_fuses_only_3_channels(
+        self,
+        mock_coq_norm,
+        mock_cse_norm,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+        mock_rrf,
+    ):
+        """When ctx.neural_encoder is None, RRF is called with exactly 3 ranked
+        lists (structural, symbol, lexical) — not 4."""
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+        ctx.neural_encoder = None
+        ctx.embedding_index = None
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq_norm.return_value = MagicMock()
+        mock_cse_norm.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = [(1, 0.9)]
+        mock_score.return_value = [(1, 0.85)]
+        mock_extract.return_value = set()
+        mock_mepo.return_value = [_mock_search_result(2, 0.7)]
+        mock_fts_query.return_value = "nat"
+        mock_fts_search.return_value = [_mock_search_result(3, 0.6)]
+        mock_rrf.return_value = [_mock_search_result(1, 0.9)]
+
+        search_by_type(ctx, "nat -> nat", limit=10)
+
+        mock_rrf.assert_called_once()
+        rrf_args = mock_rrf.call_args
+        ranked_lists = rrf_args[0][0] if rrf_args[0] else rrf_args[1]["ranked_lists"]
+        # Must be exactly 3 channels — neural was not appended
+        assert len(ranked_lists) == 3
+
+    @patch("Poule.pipeline.search.rrf_fuse")
+    @patch("Poule.pipeline.search.fts_search")
+    @patch("Poule.pipeline.search.fts_query")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_encoder_present_but_embedding_index_none_fuses_only_3_channels(
+        self,
+        mock_coq_norm,
+        mock_cse_norm,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+        mock_rrf,
+    ):
+        """When ctx.neural_encoder is present but ctx.embedding_index is None,
+        the neural channel is excluded from RRF fusion (spec §4.4 step 5)."""
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+        ctx.neural_encoder = MagicMock()  # encoder exists
+        ctx.embedding_index = None         # but index does not
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq_norm.return_value = MagicMock()
+        mock_cse_norm.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = []
+        mock_score.return_value = []
+        mock_extract.return_value = set()
+        mock_mepo.return_value = [_mock_search_result(1, 0.7)]
+        mock_fts_query.return_value = "nat"
+        mock_fts_search.return_value = [_mock_search_result(2, 0.6)]
+        mock_rrf.return_value = [_mock_search_result(1, 0.8)]
+
+        search_by_type(ctx, "nat -> nat", limit=10)
+
+        rrf_args = mock_rrf.call_args
+        ranked_lists = rrf_args[0][0] if rrf_args[0] else rrf_args[1]["ranked_lists"]
+        # Neural excluded because embedding_index is None
+        assert len(ranked_lists) == 3
+
+    @patch("Poule.pipeline.search.rrf_fuse")
+    @patch("Poule.pipeline.search.fts_search")
+    @patch("Poule.pipeline.search.fts_query")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_results_valid_when_neural_channel_absent(
+        self,
+        mock_coq_norm,
+        mock_cse_norm,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+        mock_rrf,
+    ):
+        """Results are still valid (non-empty if data exists) when the neural
+        channel is absent.  The 3-channel fusion still produces results."""
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+        ctx.neural_encoder = None
+        ctx.embedding_index = None
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq_norm.return_value = MagicMock()
+        mock_cse_norm.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = []
+        mock_score.return_value = []
+        mock_extract.return_value = set()
+        mock_mepo.return_value = []
+        mock_fts_query.return_value = "nat"
+        mock_fts_search.return_value = []
+        fused = [_mock_search_result(1, 0.85), _mock_search_result(2, 0.7)]
+        mock_rrf.return_value = fused
+
+        results = search_by_type(ctx, "nat -> nat", limit=10)
+
+        # Results come from the fused output even without neural channel
+        assert isinstance(results, list)
+        assert len(results) == 2
+
+
+# ---------------------------------------------------------------------------
+# 20. coq_normalize failure degradation (spec §4.8)
+# ---------------------------------------------------------------------------
+
+
+class TestCoqNormalizeFailureDegradation:
+    """§4.8: When coq_normalize raises NormalizationError, the pipeline returns
+    empty results and logs a warning (not propagated as a user error)."""
+
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_coq_normalize_failure_returns_empty_for_structure(
+        self, mock_coq_norm, caplog
+    ):
+        """search_by_structure: NormalizationError from coq_normalize → empty
+        result list (spec §4.8)."""
+        from Poule.pipeline.search import NormalizationError
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        mock_coq_norm.side_effect = NormalizationError("coq_normalize failed: unsupported term")
+
+        with caplog.at_level(logging.WARNING):
+            results = search_by_structure(ctx, "some expression", limit=10)
+
+        assert results == []
+
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_coq_normalize_failure_logs_warning_for_structure(
+        self, mock_coq_norm, caplog
+    ):
+        """search_by_structure: NormalizationError from coq_normalize is logged
+        at WARNING level (spec §4.8)."""
+        from Poule.pipeline.search import NormalizationError
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        mock_coq_norm.side_effect = NormalizationError("coq_normalize failed")
+
+        with caplog.at_level(logging.WARNING):
+            search_by_structure(ctx, "some expression", limit=10)
+
+        # A WARNING-level log entry must be emitted
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) >= 1
+
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_coq_normalize_failure_returns_empty_for_type(
+        self, mock_coq_norm, caplog
+    ):
+        """search_by_type: NormalizationError from coq_normalize → empty
+        result list (spec §4.8)."""
+        from Poule.pipeline.search import NormalizationError
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        mock_coq_norm.side_effect = NormalizationError("coq_normalize failed: universe inconsistency")
+
+        with caplog.at_level(logging.WARNING):
+            results = search_by_type(ctx, "nat -> nat", limit=10)
+
+        assert results == []
+
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_coq_normalize_failure_logs_warning_for_type(
+        self, mock_coq_norm, caplog
+    ):
+        """search_by_type: NormalizationError from coq_normalize is logged
+        at WARNING level (spec §4.8)."""
+        from Poule.pipeline.search import NormalizationError
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        mock_coq_norm.side_effect = NormalizationError("coq_normalize failed")
+
+        with caplog.at_level(logging.WARNING):
+            search_by_type(ctx, "nat -> nat", limit=10)
+
+        warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warning_records) >= 1

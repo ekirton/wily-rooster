@@ -915,3 +915,242 @@ class TestNFR:
                 assert f.read() == content
         finally:
             os.unlink(path)
+
+
+# ===========================================================================
+# 9. Per-Admit Timeout Enforcement — §4.3, §8
+# ===========================================================================
+
+class TestPerAdmitTimeoutEnforcement:
+    """§4.3, §8: timeout_per_admit is forwarded correctly to the search engine
+    and values ≤ 0 are clamped to 1.
+    """
+
+    @pytest.mark.asyncio
+    async def test_timeout_per_admit_passed_to_engine(self):
+        """timeout_per_admit is passed to proof_search for each admit (§4.3 step 3)."""
+        fill_admits = _import_fill_admits()
+        manager = _make_mock_session_manager()
+        engine = _make_mock_search_engine(results=[
+            _make_search_result("success", ["reflexivity."]),
+        ])
+
+        import tempfile, os
+        content = "Lemma foo : 0 + 0 = 0. Proof. admit. Qed.\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".v", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = f.name
+
+        try:
+            await fill_admits(
+                session_manager=manager,
+                search_engine=engine,
+                file_path=path,
+                timeout_per_admit=42.0,
+                max_depth=10,
+                max_breadth=20,
+            )
+            # proof_search should have been called with timeout=42.0 as second positional arg
+            assert engine.proof_search.call_count == 1
+            call_args = engine.proof_search.call_args
+            # The call signature is: proof_search(session_id, timeout, max_depth, max_breadth)
+            positional = call_args.args
+            kwargs = call_args.kwargs
+            timeout_value = positional[1] if len(positional) > 1 else kwargs.get("timeout")
+            assert timeout_value == 42.0, (
+                f"Expected timeout=42.0 passed to proof_search, got {timeout_value}"
+            )
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.asyncio
+    async def test_timeout_per_admit_zero_clamped_to_1(self):
+        """timeout_per_admit <= 0 is clamped to 1 before being passed to the engine (§7.1)."""
+        fill_admits = _import_fill_admits()
+        manager = _make_mock_session_manager()
+        engine = _make_mock_search_engine(results=[
+            _make_search_result("success", ["reflexivity."]),
+        ])
+
+        import tempfile, os
+        content = "Lemma foo : 0 + 0 = 0. Proof. admit. Qed.\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".v", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = f.name
+
+        try:
+            await fill_admits(
+                session_manager=manager,
+                search_engine=engine,
+                file_path=path,
+                timeout_per_admit=0,  # invalid — must be clamped to 1
+                max_depth=10,
+                max_breadth=20,
+            )
+            assert engine.proof_search.call_count == 1
+            call_args = engine.proof_search.call_args
+            positional = call_args.args
+            kwargs = call_args.kwargs
+            timeout_value = positional[1] if len(positional) > 1 else kwargs.get("timeout")
+            assert timeout_value >= 1, (
+                f"timeout_per_admit=0 must be clamped to >= 1, but engine received {timeout_value}"
+            )
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.asyncio
+    async def test_negative_timeout_per_admit_clamped_to_1(self):
+        """timeout_per_admit < 0 is clamped to 1 before being passed to the engine (§7.1)."""
+        fill_admits = _import_fill_admits()
+        manager = _make_mock_session_manager()
+        engine = _make_mock_search_engine(results=[
+            _make_search_result("success", ["reflexivity."]),
+        ])
+
+        import tempfile, os
+        content = "Lemma foo : 0 + 0 = 0. Proof. admit. Qed.\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".v", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = f.name
+
+        try:
+            await fill_admits(
+                session_manager=manager,
+                search_engine=engine,
+                file_path=path,
+                timeout_per_admit=-99,
+                max_depth=10,
+                max_breadth=20,
+            )
+            assert engine.proof_search.call_count == 1
+            call_args = engine.proof_search.call_args
+            positional = call_args.args
+            kwargs = call_args.kwargs
+            timeout_value = positional[1] if len(positional) > 1 else kwargs.get("timeout")
+            assert timeout_value >= 1, (
+                f"timeout_per_admit=-99 must be clamped to >= 1, but engine received {timeout_value}"
+            )
+        finally:
+            os.unlink(path)
+
+
+# ===========================================================================
+# 10. Error Isolation — §4.3
+# ===========================================================================
+
+class TestErrorIsolation:
+    """§4.3: A crash/exception on admit N does not prevent admit N+1 from being
+    processed, and the session is always closed even when an exception is raised.
+    """
+
+    @pytest.mark.asyncio
+    async def test_crash_on_admit_n_does_not_skip_admit_n_plus_1(self):
+        """Exception during proof search for admit N lets admit N+1 be processed (§4.3)."""
+        fill_admits = _import_fill_admits()
+        manager = _make_mock_session_manager()
+        engine = AsyncMock()
+
+        call_count = [0]
+
+        async def _search(session_id, timeout, max_depth, max_breadth):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Admit 0 raises a generic exception (not a SessionError)
+                raise RuntimeError("unexpected crash during search")
+            return _make_search_result("success")
+
+        engine.proof_search.side_effect = _search
+
+        import tempfile, os
+        content = (
+            "Lemma foo : True. Proof. admit. Qed.\n"
+            "Lemma bar : True. Proof. admit. Qed.\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".v", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = f.name
+
+        try:
+            result = await fill_admits(
+                session_manager=manager,
+                search_engine=engine,
+                file_path=path,
+                timeout_per_admit=30,
+                max_depth=10,
+                max_breadth=20,
+            )
+            # Both admits must appear in results (neither was silently skipped)
+            assert result.total_admits == 2, (
+                f"Expected 2 admits processed, got total_admits={result.total_admits}"
+            )
+            assert len(result.results) == 2, (
+                f"Expected 2 AdmitResult entries, got {len(result.results)}"
+            )
+            # Admit 0 crashed — must be recorded as unfilled with an error
+            assert result.results[0].status == "unfilled"
+            assert result.results[0].error is not None, (
+                "Admit 0 crashed; error field must be non-null"
+            )
+            # Admit 1 succeeded — must be filled
+            assert result.results[1].status == "filled", (
+                "Admit 1 must be filled; crash on admit 0 must not block it"
+            )
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.asyncio
+    async def test_session_closed_even_when_step_forward_raises(self):
+        """Session is always closed even when step_forward raises an exception (§4.3 step 5)."""
+        fill_admits = _import_fill_admits()
+        FILE_NOT_FOUND, PROOF_NOT_FOUND, BACKEND_CRASHED, SessionError = _import_session_errors()
+
+        # Build a session manager where step_forward raises on the first admit
+        manager = AsyncMock()
+        session_id_holder = ["session_1"]
+        manager.create_session.return_value = (session_id_holder[0], _make_proof_state())
+        manager.step_forward.side_effect = SessionError(BACKEND_CRASHED, "backend died")
+        manager.close_session.return_value = None
+
+        engine = _make_mock_search_engine(results=[_make_search_result("failure")])
+
+        import tempfile, os
+        # admit_index == 0 means no step_forward calls are needed (the orchestrator
+        # steps forward admit_index times).  Use a second tactic before admit so
+        # admit_index becomes 1 and step_forward is actually invoked.
+        # The simplest way: place admit at admit_index=0 — step_forward is called 0
+        # times.  To actually trigger step_forward we need admit_index >= 1.
+        # We simulate this by having the locate_admits return admit_index=1 indirectly.
+        # Easiest: write a file where the proof has an explicit prior tactic.
+        # The orchestrator calls step_forward `admit.admit_index` times; if admit_index=0
+        # step_forward is never called.  So we write two admits in one proof so the
+        # second has admit_index=1.
+        content = (
+            "Lemma foo : True. Proof. admit. admit. Qed.\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".v", delete=False) as f:
+            f.write(content)
+            f.flush()
+            path = f.name
+
+        try:
+            result = await fill_admits(
+                session_manager=manager,
+                search_engine=engine,
+                file_path=path,
+                timeout_per_admit=30,
+                max_depth=10,
+                max_breadth=20,
+            )
+            # Regardless of what happened, close_session must have been called for
+            # every session that was opened (one per admit).
+            assert manager.close_session.call_count == manager.create_session.call_count, (
+                f"close_session called {manager.close_session.call_count} times but "
+                f"create_session called {manager.create_session.call_count} times — "
+                "session leak detected"
+            )
+        finally:
+            os.unlink(path)

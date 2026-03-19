@@ -974,3 +974,110 @@ class TestSigintHandling:
 
             # Only t1 was completed
             assert summary.total_extracted <= 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 6. Deterministic Output and Session ID Exclusion (§4.2, §4.3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestDeterministicOutput:
+    """Identical inputs produce byte-identical output except extraction_timestamp (§4.3)."""
+
+    def test_two_runs_produce_identical_output_except_timestamp(self, tmp_path):
+        """GIVEN a mock project with fixed inputs
+        WHEN run_campaign is called twice on the same inputs
+        THEN all records are field-by-field identical, except extraction_timestamp
+        in CampaignMetadata.
+
+        Spec §4.3 MAINTAINS: Identical inputs shall produce byte-identical output.
+        The only per-run variable is extraction_timestamp in CampaignMetadata.
+        """
+        import json
+        from Poule.extraction.campaign import run_campaign
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "Test.v").write_text(
+            "Theorem t1 : True. Proof. exact I. Qed.\n"
+            "Theorem t2 : True. Proof. exact I. Qed.\n"
+        )
+
+        out1 = tmp_path / "run1.jsonl"
+        out2 = tmp_path / "run2.jsonl"
+
+        # Mock extract_single_proof to produce deterministic records.
+        fixed_records = [
+            _make_extraction_record(theorem_name="t1"),
+            _make_extraction_record(theorem_name="t2"),
+        ]
+
+        with patch(
+            "Poule.extraction.campaign.extract_single_proof",
+            side_effect=fixed_records * 2,
+        ):
+            asyncio.run(run_campaign([str(proj)], str(out1), {}))
+
+        with patch(
+            "Poule.extraction.campaign.extract_single_proof",
+            side_effect=fixed_records * 2,
+        ):
+            asyncio.run(run_campaign([str(proj)], str(out2), {}))
+
+        lines1 = [json.loads(l) for l in out1.read_text().strip().split("\n")]
+        lines2 = [json.loads(l) for l in out2.read_text().strip().split("\n")]
+
+        assert len(lines1) == len(lines2), (
+            f"Run 1 produced {len(lines1)} records, run 2 produced {len(lines2)}"
+        )
+
+        for i, (r1, r2) in enumerate(zip(lines1, lines2)):
+            if r1.get("record_type") == "campaign_metadata":
+                # Only extraction_timestamp may differ.
+                r1_copy = {k: v for k, v in r1.items() if k != "extraction_timestamp"}
+                r2_copy = {k: v for k, v in r2.items() if k != "extraction_timestamp"}
+                assert r1_copy == r2_copy, (
+                    f"CampaignMetadata (line {i}) differs beyond extraction_timestamp: "
+                    f"{r1_copy} != {r2_copy}"
+                )
+            else:
+                assert r1 == r2, (
+                    f"Record at line {i} differs between runs:\n  run1: {r1}\n  run2: {r2}"
+                )
+
+
+class TestSessionIdExclusion:
+    """ExtractionRecords must not contain a session_id field (§4.2)."""
+
+    def test_no_session_id_in_extraction_records(self, tmp_path):
+        """GIVEN a campaign that produces ExtractionRecords
+        WHEN the output is inspected
+        THEN no ExtractionRecord contains a session_id field.
+
+        Spec §4.2 ENSURES: session_id is excluded from all embedded proof states.
+        """
+        import json
+        from Poule.extraction.campaign import run_campaign
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "Test.v").write_text(
+            "Theorem t1 : True. Proof. exact I. Qed.\n"
+        )
+        output = tmp_path / "out.jsonl"
+
+        asyncio.run(run_campaign([str(proj)], str(output), {}))
+
+        lines = output.read_text().strip().split("\n")
+        records = [json.loads(l) for l in lines]
+
+        for record in records:
+            if record.get("record_type") == "proof_trace":
+                assert "session_id" not in record, (
+                    f"ExtractionRecord contains forbidden session_id field: {record}"
+                )
+                # Also check nested steps / proof states for session_id
+                for step in record.get("steps", []):
+                    assert "session_id" not in step, (
+                        f"ExtractionStep contains forbidden session_id field: {step}"
+                    )

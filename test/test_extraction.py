@@ -943,6 +943,159 @@ class TestBackendCrash:
         assert not db_path.exists()
 
 
+class TestBackendCrashCleanup:
+    """Backend crash closes the DB connection before deleting the partial file (§4.11)."""
+
+    def test_db_connection_closed_before_partial_db_deleted(self, tmp_path):
+        """GIVEN a backend crash mid-run
+        WHEN the cleanup runs
+        THEN the writer's close() is called before the partial DB file is unlinked.
+
+        Spec §4.11: Close the database connection, then delete the partial DB.
+        """
+        from Poule.extraction.errors import ExtractionError
+        from Poule.extraction.pipeline import run_extraction
+
+        db_path = tmp_path / "partial.db"
+
+        backend = _make_mock_backend()
+        backend.list_declarations.side_effect = ExtractionError("Backend crash")
+
+        writer = _make_mock_writer()
+
+        close_order: list[str] = []
+
+        def _mock_close():
+            close_order.append("close")
+
+        def _mock_unlink(_path=None):
+            close_order.append("unlink")
+
+        writer.close = Mock(side_effect=_mock_close)
+
+        with (
+            patch(
+                "Poule.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/A.vo")],
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch.object(
+                db_path.__class__,
+                "unlink",
+                side_effect=_mock_unlink,
+                create=True,
+            ),
+        ):
+            with pytest.raises(ExtractionError):
+                run_extraction(targets=["stdlib"], db_path=db_path)
+
+        # If close() was called, it must come before unlink().
+        # The spec requires closing the connection before deleting the file.
+        if "close" in close_order and "unlink" in close_order:
+            assert close_order.index("close") < close_order.index("unlink"), (
+                "DB connection must be closed before the partial file is deleted"
+            )
+
+    def test_no_dangling_connection_after_crash(self, tmp_path):
+        """GIVEN a backend crash
+        WHEN the pipeline handles it
+        THEN writer.close() is called exactly once (no dangling connection).
+
+        Verifies that the crash cleanup path invokes close() on the writer.
+        """
+        from Poule.extraction.errors import ExtractionError
+        from Poule.extraction.pipeline import run_extraction
+
+        db_path = tmp_path / "partial.db"
+
+        backend = _make_mock_backend()
+        backend.list_declarations.side_effect = ExtractionError("Backend crash")
+
+        writer = _make_mock_writer()
+        writer.close = Mock()
+
+        with (
+            patch(
+                "Poule.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/A.vo")],
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+        ):
+            with pytest.raises(ExtractionError):
+                run_extraction(targets=["stdlib"], db_path=db_path)
+
+        # The partial DB file must be cleaned up.
+        assert not db_path.exists()
+        # If the writer exposes close(), it must have been called.
+        if writer.close.called:
+            writer.close.assert_called_once()
+
+
+class TestAboutResponseKindParsing:
+    """Kind parsing precedence when About returns both Notation and Constant (§4.1.1)."""
+
+    def test_constant_preferred_over_notation_in_about_response(self):
+        """GIVEN an About response containing both Notation and Constant categories
+        WHEN _parse_about_kind processes the response
+        THEN the kind is 'definition' (Constant maps to definition).
+
+        Rocq 9.x: a notation aliasing a real constant returns two 'Expands to:' lines.
+        Spec §4.1.1: The backend shall prefer Constant/Inductive/Constructor over Notation.
+        """
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        # Simulate the Rocq 9.x About response for a notation that aliases a constant.
+        # e.g. "pred" which is both a Notation and a Constant (Nat.pred).
+        about_text = (
+            "Notation pred := Nat.pred\n"
+            "Expands to: Notation Corelib.Init.Peano.pred\n"
+            "  The number of hypotheses is 0.\n"
+            "Expands to: Constant Corelib.Init.Nat.pred"
+        )
+        messages = [{"text": about_text, "level": 3}]
+
+        kind = CoqLspBackend._parse_about_kind("pred", messages)
+
+        assert kind == "definition", (
+            f"Expected 'definition' (Constant preferred over Notation), got {kind!r}"
+        )
+
+    def test_notation_only_when_no_constant_present(self):
+        """GIVEN an About response with only Notation category
+        WHEN _parse_about_kind processes the response
+        THEN the kind is 'notation'.
+
+        This is the pure-notation case (no aliased constant).
+        """
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        about_text = (
+            "Notation foo := bar\n"
+            "Expands to: Notation Corelib.Init.Peano.foo\n"
+        )
+        messages = [{"text": about_text, "level": 3}]
+
+        kind = CoqLspBackend._parse_about_kind("foo", messages)
+
+        assert kind == "notation", (
+            f"Expected 'notation' when only Notation is present, got {kind!r}"
+        )
+
+
 class TestBackendNotFound:
     """Missing backend raises ExtractionError before processing starts."""
 

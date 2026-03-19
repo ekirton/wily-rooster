@@ -265,6 +265,13 @@ async def handle_submit_tactic(
     try:
         state = await ctx.session_manager.submit_tactic(session_id, tactic)
     except SessionError as exc:
+        # §4.9: TACTIC_ERROR responses include the unchanged ProofState if available
+        if exc.code == "TACTIC_ERROR" and getattr(exc, "state", None) is not None:
+            error_body = {"code": exc.code, "message": exc.message, "state": _serialize(exc.state)}
+            return {
+                "content": [{"type": "text", "text": json.dumps({"error": error_body})}],
+                "isError": True,
+            }
         return _session_error_response(exc)
     return _format_success(state)
 

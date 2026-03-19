@@ -18,12 +18,21 @@ class IndexReader:
             self._conn = reader._conn
             self._coq_version = reader._coq_version
             self._mathcomp_version = reader._mathcomp_version
+            self._closed = False
             return
         self._conn = conn_or_path
         self._conn.row_factory = sqlite3.Row
+        self._closed = False
+
+    def _check_open(self) -> None:
+        """Raise StorageError if the connection has been closed."""
+        if self._closed:
+            raise StorageError("IndexReader has been closed")
 
     def close(self) -> None:
-        self._conn.close()
+        if not self._closed:
+            self._conn.close()
+            self._closed = True
 
     def __enter__(self) -> IndexReader:
         return self
@@ -76,6 +85,7 @@ class IndexReader:
         return self._mathcomp_version
 
     def load_wl_histograms(self) -> dict[int, dict[int, dict[str, int]]]:
+        self._check_open()
         rows = self._conn.execute(
             "SELECT decl_id, h, histogram FROM wl_vectors"
         ).fetchall()
@@ -86,30 +96,38 @@ class IndexReader:
         return result
 
     def load_inverted_index(self) -> dict[str, set[int]]:
+        self._check_open()
         rows = self._conn.execute(
             "SELECT id, symbol_set FROM declarations"
         ).fetchall()
         result: dict[str, set[int]] = {}
         for row in rows:
             decl_id = row[0]
-            symbols = json.loads(row[1])
+            try:
+                symbols = json.loads(row[1])
+            except json.JSONDecodeError:
+                # Skip declarations with malformed symbol_set JSON
+                continue
             for symbol in symbols:
                 result.setdefault(symbol, set()).add(decl_id)
         return result
 
     def load_symbol_frequencies(self) -> dict[str, int]:
+        self._check_open()
         rows = self._conn.execute(
             "SELECT symbol, freq FROM symbol_freq"
         ).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def load_declaration_node_counts(self) -> dict[int, int]:
+        self._check_open()
         rows = self._conn.execute(
             "SELECT id, node_count FROM declarations WHERE node_count IS NOT NULL"
         ).fetchall()
         return {row[0]: row[1] for row in rows}
 
     def get_declaration(self, name: str) -> dict | None:
+        self._check_open()
         row = self._conn.execute(
             "SELECT * FROM declarations WHERE name = ?", (name,)
         ).fetchone()
@@ -118,6 +136,7 @@ class IndexReader:
         return dict(row)
 
     def get_declarations_by_ids(self, ids: list[int]) -> list[dict]:
+        self._check_open()
         if not ids:
             return []
         placeholders = ",".join("?" for _ in ids)
@@ -128,6 +147,7 @@ class IndexReader:
         return [dict(r) for r in rows]
 
     def get_constr_trees(self, ids: list[int]) -> dict[int, bytes]:
+        self._check_open()
         if not ids:
             return {}
         placeholders = ",".join("?" for _ in ids)
@@ -139,19 +159,23 @@ class IndexReader:
         return {row[0]: row[1] for row in rows}
 
     def search_fts(self, query: str, limit: int) -> list[dict]:
+        self._check_open()
         if not query or not query.strip():
             return []
-        rows = self._conn.execute(
-            "SELECT d.id, d.name, d.module, d.kind, d.statement, "
-            "d.type_expr, d.node_count, d.symbol_set, "
-            "bm25(declarations_fts, 10.0, 1.0, 5.0) AS rank "
-            "FROM declarations_fts "
-            "JOIN declarations d ON d.id = declarations_fts.rowid "
-            "WHERE declarations_fts MATCH ? "
-            "ORDER BY rank "
-            "LIMIT ?",
-            (query, limit),
-        ).fetchall()
+        try:
+            rows = self._conn.execute(
+                "SELECT d.id, d.name, d.module, d.kind, d.statement, "
+                "d.type_expr, d.node_count, d.symbol_set, "
+                "bm25(declarations_fts, 10.0, 1.0, 5.0) AS rank "
+                "FROM declarations_fts "
+                "JOIN declarations d ON d.id = declarations_fts.rowid "
+                "WHERE declarations_fts MATCH ? "
+                "ORDER BY rank "
+                "LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        except sqlite3.OperationalError as e:
+            raise StorageError(f"FTS5 query error: {e}") from e
 
         if not rows:
             return []
@@ -167,9 +191,51 @@ class IndexReader:
             results.append(d)
         return results
 
+    def load_embeddings(self):
+        """Return (embedding_matrix, decl_id_map) or (None, None) if unavailable."""
+        self._check_open()
+        # Check if the embeddings table exists
+        row = self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings'"
+        ).fetchone()
+        if row is None:
+            return (None, None)
+
+        rows = self._conn.execute(
+            "SELECT decl_id, vector FROM embeddings ORDER BY rowid"
+        ).fetchall()
+        if not rows:
+            return (None, None)
+
+        import struct
+        import array as _array
+
+        n = len(rows)
+        dim = 768
+        decl_ids = []
+        matrix_flat = []
+        for r in rows:
+            decl_ids.append(r[0])
+            blob = r[1]
+            floats = struct.unpack_from(f"{dim}f", blob)
+            matrix_flat.extend(floats)
+
+        import array
+        id_map = array.array("i", decl_ids)
+        embedding_matrix = array.array("f", matrix_flat)
+        return (embedding_matrix, id_map)
+
+    def get_meta(self, key: str) -> str | None:
+        self._check_open()
+        row = self._conn.execute(
+            "SELECT value FROM index_meta WHERE key = ?", (key,)
+        ).fetchone()
+        return row[0] if row else None
+
     def get_dependencies(
         self, decl_id: int, direction: str, relation: str | None
     ) -> list[dict]:
+        self._check_open()
         if direction == "outgoing":
             col, join_col = "src", "dst"
         else:
@@ -193,6 +259,7 @@ class IndexReader:
     def get_declarations_by_module(
         self, module: str, exclude_id: int | None
     ) -> list[dict]:
+        self._check_open()
         if exclude_id is not None:
             rows = self._conn.execute(
                 "SELECT * FROM declarations WHERE module = ? AND id != ?",
@@ -205,6 +272,7 @@ class IndexReader:
         return [dict(r) for r in rows]
 
     def list_modules(self, prefix: str) -> list[dict]:
+        self._check_open()
         rows = self._conn.execute(
             "SELECT module, COUNT(*) AS count FROM declarations "
             "WHERE module LIKE ? GROUP BY module",

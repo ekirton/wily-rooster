@@ -106,12 +106,6 @@ If you want to use a different project for a one-off session, just `cd` into it 
 
 All 6 supported libraries are indexed automatically on first run. The container checks whether the search index is present on every startup and downloads it if missing. A startup message confirms which libraries are currently indexed.
 
-Library indexes are stored in `~/poule-home/data/`. To override this location:
-
-```bash
-export POULE_LIBRARIES_PATH=/data/my-libraries
-```
-
 ### Persistent home directory
 
 State is preserved across sessions in `~/poule-home`:
@@ -119,22 +113,8 @@ State is preserved across sessions in `~/poule-home`:
 ```
 ~/poule-home/
 ├── .claude/          # Claude Code settings, MCP config, auth
-├── .ssh/             # SSH keys (copy yours here if needed)
-├── .gitconfig        # Git configuration
-└── .zsh_history      # Shell history
-```
-
-Library indexes are stored in `~/poule-home/data/`:
-
-```
-~/poule-home/data/
-├── index-stdlib.db       # Per-library index
-├── index-mathcomp.db     # Per-library index
-├── index-stdpp.db        # Per-library index
-├── index-flocq.db        # Per-library index
-├── index-coquelicot.db   # Per-library index
-├── index-coqinterval.db  # Per-library index
-└── index.db              # Merged search index
+└── data/
+    └── index.db      # Coq search index (downloaded on first run)
 ```
 
 To set up git and SSH inside the container, copy your existing config:
@@ -155,10 +135,10 @@ poule --no-auto-update   # Skip Claude Code update check
 poule --rebuild          # Force update Claude Code immediately
 ```
 
-To force re-download of library indexes:
+To force re-download of the search index:
 
 ```bash
-rm ~/poule-home/data/index-*.db ~/poule-home/data/index.db
+rm ~/poule-home/data/index.db
 poule    # re-download triggers automatically on next startup
 ```
 
@@ -223,9 +203,9 @@ For the full list of MCP tools and their parameters, see [MCP Tools Reference](d
 All search and proof replay features are also available as standalone commands inside the container:
 
 ```bash
-uv run --project /app python -m poule.cli search-by-name --db /data/index.db "Nat.add_comm"
-uv run --project /app python -m poule.cli search-by-type --db /data/index.db "nat -> nat -> nat"
-uv run --project /app python -m poule.cli --help
+poule search-by-name "Nat.add_comm"
+poule search-by-type "nat -> nat -> nat"
+poule --help
 ```
 
 ## Development

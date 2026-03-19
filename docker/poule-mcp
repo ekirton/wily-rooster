@@ -34,7 +34,7 @@ _wait_ready() {
 case "${1:-}" in
     start)
         if _is_running; then
-            echo "Poule MCP server already running (pid $(cat "$PIDFILE"), port $PORT)"
+            echo "Poule MCP server already running on port $PORT"
             exit 0
         fi
         echo "Starting Poule MCP server on $HOST:$PORT..."
@@ -44,9 +44,9 @@ case "${1:-}" in
             >> "$LOGFILE" 2>&1 &
         echo $! > "$PIDFILE"
         if _wait_ready; then
-            echo "Poule MCP server ready (pid $(cat "$PIDFILE"))"
+            echo "Poule MCP server ready"
         else
-            echo "Warning: server did not become ready within 5s (pid $(cat "$PIDFILE"))"
+            echo "Warning: server did not become ready within 5s"
             echo "Check logs: poule-mcp logs"
         fi
         ;;
@@ -56,7 +56,7 @@ case "${1:-}" in
             PID=$(cat "$PIDFILE")
             kill "$PID"
             rm -f "$PIDFILE"
-            echo "Stopped Poule MCP server (pid $PID)"
+            echo "Stopped Poule MCP server"
         else
             rm -f "$PIDFILE"
             echo "Poule MCP server is not running"
@@ -71,7 +71,7 @@ case "${1:-}" in
 
     status)
         if _is_running; then
-            echo "Poule MCP server running (pid $(cat "$PIDFILE"), port $PORT)"
+            echo "Poule MCP server running on port $PORT"
         else
             echo "Poule MCP server stopped"
         fi

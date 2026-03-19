@@ -128,6 +128,7 @@ RUN chmod +x /usr/local/bin/poule-mcp
 # Place the virtualenv outside /app so it survives a bind-mount of the
 # project root in dev containers.
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_LINK_MODE=copy
 RUN mkdir -p /opt/venv && chown -R ${HOST_UID}:${HOST_GID} /opt/venv /poule
 
 # Create venv as the app user so it's writable when source is installed later

@@ -51,7 +51,7 @@ def _to_search_result(row: dict, score: float = 1.0) -> SearchResult:
 # ---------------------------------------------------------------------------
 
 _db_option = click.option(
-    "--db", required=True, type=click.Path(), help="Path to the SQLite index database."
+    "--db", default="/data/index.db", type=click.Path(), help="Path to the SQLite index database."
 )
 _json_option = click.option("--json", "json_mode", is_flag=True, default=False, help="Output as JSON.")
 _limit_option = click.option("--limit", default=50, type=int, help="Maximum number of results (1-200).")

@@ -320,6 +320,11 @@ echo "Starting Poule in: $PROJECT_DIR"
 echo ""
 echo ""
 
+# ── Detect Poule CLI subcommands ─────────────────────────────────────────────
+# If the first arg is a known poule subcommand, route to the poule CLI
+# inside the container.  Otherwise pass args through as-is.
+POULE_SUBCOMMANDS="search-by-name|search-by-type|search-by-structure|search-by-symbols|get-lemma|find-related|list-modules|download-index|replay-proof|extract|extract-deps|quality-report"
+
 if [ ${#ARGS[@]} -eq 0 ]; then
     # No command: entrypoint starts MCP server, syncs commands, launches Claude.
     docker run -it --rm \
@@ -333,9 +338,22 @@ if [ ${#ARGS[@]} -eq 0 ]; then
         -e HOME="/home/$HOST_USER" \
         -e TZ="${TZ:-UTC}" \
         "$IMAGE"
+elif [[ "${ARGS[0]}" =~ ^($POULE_SUBCOMMANDS)$ ]]; then
+    # Poule CLI subcommand: route to the poule CLI inside the container.
+    docker run --rm \
+        --platform linux/amd64 \
+        -p $HOST_PORT:3000 \
+        -v "$PROJECT_DIR:$PROJECT_DIR" \
+        -v "$CONTAINER_HOME:/home/$HOST_USER" \
+        -v "$DATA_DIR:/data" \
+        -w "$PROJECT_DIR" \
+        -e ANTHROPIC_API_KEY \
+        -e HOME="/home/$HOST_USER" \
+        -e TZ="${TZ:-UTC}" \
+        "$IMAGE" \
+        poule "${ARGS[@]}"
 else
-    # With command: entrypoint starts MCP server, syncs commands, then execs
-    # the provided command.  MCP server stops on exit via entrypoint trap.
+    # Arbitrary command: pass through to the container.
     docker run --rm \
         --platform linux/amd64 \
         -p $HOST_PORT:3000 \

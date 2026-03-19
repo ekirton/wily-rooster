@@ -40,6 +40,7 @@ def merge_indexes(sources: list[tuple[str, Path]], dest: Path) -> dict:
         sv = _meta_value(conn, "schema_version")
         cv = _meta_value(conn, "coq_version")
         lv_json = _meta_value(conn, "library_versions")
+        lv_single = _meta_value(conn, "library_version")
         conn.close()
 
         if schema_version is None:
@@ -61,9 +62,11 @@ def merge_indexes(sources: list[tuple[str, Path]], dest: Path) -> dict:
         if lv_json:
             lv = json.loads(lv_json)
             library_versions.update(lv)
-        # Fallback: if library_versions metadata didn't contain this lib
         if lib_name not in library_versions:
-            library_versions[lib_name] = "unknown"
+            if lv_single:
+                library_versions[lib_name] = lv_single
+            else:
+                library_versions[lib_name] = "unknown"
 
     # 3. Create fresh dest DB with the canonical schema.
     dest_conn = sqlite3.connect(str(dest))

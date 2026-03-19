@@ -12,13 +12,21 @@ from pathlib import Path
 
 import click
 
-from Poule.config import get_libraries_dir, load_config
 from Poule.paths import get_model_dir
 from Poule.storage.merge import merge_indexes
 
 GITHUB_API_URL = "https://api.github.com/repos/ekirton/Poule/releases"
 TAG_PREFIX = "index-v"
 CHUNK_SIZE = 65536  # 64 KB
+ALL_LIBRARIES = ["stdlib", "stdpp", "mathcomp", "flocq", "coqinterval", "coquelicot"]
+
+
+def get_libraries_dir() -> Path:
+    """Return the libraries directory from env or default."""
+    env = os.environ.get("POULE_LIBRARIES_PATH")
+    if env:
+        return Path(env)
+    return Path("/data")
 
 
 def _find_latest_release() -> dict:
@@ -170,8 +178,8 @@ def download_index(
     if model_dir is None:
         model_dir = get_model_dir()
 
-    # 2. Read config
-    libraries = load_config(libraries_dir)
+    # 2. Libraries are fixed
+    libraries = list(ALL_LIBRARIES)
 
     # 3. Check for existing model before downloading anything
     model_path = model_dir / "neural-premise-selector.onnx"

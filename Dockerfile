@@ -170,7 +170,104 @@ COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
 COPY --chown=${HOST_UID}:${HOST_GID} commands/ commands/
 COPY --chown=${HOST_UID}:${HOST_GID} .mcp.json CLAUDE.md README.md ./
 
+# ── Bake index.db: download from index-merged release and validate ───────
+# The index is a build-time dependency — if the release is missing or versions
+# don't match the installed opam packages, the build fails.
+USER root
+RUN mkdir -p /data && chown ${HOST_UID}:${HOST_GID} /data
 USER ${HOST_USER}
+
+RUN set -e && \
+    REPO="ekirton/Poule" && \
+    TAG="index-merged" && \
+    RELEASE_URL="https://api.github.com/repos/${REPO}/releases/tags/${TAG}" && \
+    echo "Downloading manifest from ${TAG} release..." && \
+    curl -fsSL -H "Accept: application/vnd.github+json" "$RELEASE_URL" > /tmp/release.json && \
+    # Extract manifest download URL
+    python3 -c "
+import json, sys
+release = json.load(open('/tmp/release.json'))
+for asset in release.get('assets', []):
+    if asset['name'] == 'manifest.json':
+        print(asset['browser_download_url'])
+        sys.exit(0)
+print('ERROR: manifest.json not found in release', file=sys.stderr)
+sys.exit(1)
+" > /tmp/manifest_url.txt && \
+    curl -fsSL -L "$(cat /tmp/manifest_url.txt)" -o /tmp/manifest.json && \
+    # Extract index.db download URL
+    python3 -c "
+import json, sys
+release = json.load(open('/tmp/release.json'))
+for asset in release.get('assets', []):
+    if asset['name'] == 'index.db':
+        print(asset['browser_download_url'])
+        sys.exit(0)
+print('ERROR: index.db not found in release', file=sys.stderr)
+sys.exit(1)
+" > /tmp/index_url.txt && \
+    echo "Downloading index.db..." && \
+    curl -fsSL -L "$(cat /tmp/index_url.txt)" -o /data/index.db && \
+    # Verify SHA-256
+    python3 -c "
+import hashlib, json, sys
+manifest = json.load(open('/tmp/manifest.json'))
+expected = manifest['index']['sha256']
+sha = hashlib.sha256(open('/data/index.db', 'rb').read()).hexdigest()
+if sha != expected:
+    print(f'SHA-256 mismatch: expected {expected}, got {sha}', file=sys.stderr)
+    sys.exit(1)
+print(f'SHA-256 verified: {sha}')
+" && \
+    # Validate versions match installed opam packages
+    python3 - <<'PYEOF'
+import json, subprocess, sys
+
+manifest = json.load(open('/tmp/manifest.json'))
+
+# Get Coq version from coqc
+result = subprocess.run(['coqc', '--version'], capture_output=True, text=True)
+import re
+m = re.search(r'version\s+([\d.]+)', result.stdout)
+if not m:
+    print('ERROR: could not determine Coq version from coqc', file=sys.stderr)
+    sys.exit(1)
+installed_coq = m.group(1)
+manifest_coq = manifest['coq_version']
+if installed_coq != manifest_coq:
+    print(f'ERROR: Coq version mismatch — installed {installed_coq}, index expects {manifest_coq}', file=sys.stderr)
+    sys.exit(1)
+print(f'Coq version OK: {installed_coq}')
+
+# Map library identifiers to opam package names
+opam_packages = {
+    'mathcomp': 'coq-mathcomp-ssreflect',
+    'stdpp': 'coq-stdpp',
+    'flocq': 'coq-flocq',
+    'coquelicot': 'coq-coquelicot',
+    'coqinterval': 'coq-interval',
+}
+
+libs = manifest.get('libraries', {})
+for lib_id, entry in libs.items():
+    expected_ver = entry['version']
+    if lib_id == 'stdlib':
+        installed_ver = installed_coq
+    else:
+        pkg = opam_packages.get(lib_id)
+        if not pkg:
+            print(f'WARNING: unknown library {lib_id}, skipping version check', file=sys.stderr)
+            continue
+        r = subprocess.run(['opam', 'show', pkg, '--field=version'], capture_output=True, text=True)
+        installed_ver = r.stdout.strip().strip('"')
+    if installed_ver != expected_ver:
+        print(f'ERROR: {lib_id} version mismatch — installed {installed_ver}, index expects {expected_ver}', file=sys.stderr)
+        sys.exit(1)
+    print(f'{lib_id} version OK: {installed_ver}')
+
+print('All versions validated.')
+PYEOF
+RUN rm -f /tmp/release.json /tmp/manifest.json /tmp/manifest_url.txt /tmp/index_url.txt
 
 # Minimal zshrc (overridden by persistent home mount at runtime)
 RUN cat > ~/.zshrc << 'ZSHEOF'
@@ -194,7 +291,6 @@ export UV_LINK_MODE="copy"
 alias claude='claude --dangerously-skip-permissions'
 ZSHEOF
 
-VOLUME ["/data"]
 EXPOSE 3000
 ENV SHELL=/bin/zsh
 

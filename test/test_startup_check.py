@@ -13,8 +13,6 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch
-
 import pytest
 
 from Poule.storage import IndexWriter
@@ -103,20 +101,19 @@ class TestStartupCheckExists:
     """When index.db exists, startup_check reports status without downloading."""
 
     def test_reports_status_when_index_exists(self, tmp_path, capsys):
-        """index.db present → reports libraries, no download attempted."""
+        """index.db present → reports libraries, no warning."""
         _create_index_db(
             tmp_path / "index.db",
             ["stdlib", "mathcomp"],
             {"stdlib": "8.19.2", "mathcomp": "2.2.0"},
         )
 
-        with patch("Poule.cli.startup_check._download_index") as mock_dl:
-            startup_check(tmp_path)
-            mock_dl.assert_not_called()
+        startup_check(tmp_path)
 
         captured = capsys.readouterr()
         assert "stdlib 8.19.2" in captured.err
         assert "mathcomp 2.2.0" in captured.err
+        assert "WARNING" not in captured.err
 
     def test_reports_all_six_libraries(self, tmp_path, capsys):
         """index.db with all 6 libraries → all reported."""
@@ -132,30 +129,31 @@ class TestStartupCheckExists:
 
 
 # ===========================================================================
-# 3. startup_check — index.db missing triggers download
+# 3. startup_check — index.db missing prints warning
 # ===========================================================================
 
 
-class TestStartupCheckDownload:
-    """When index.db is missing, startup_check attempts to download it."""
+class TestStartupCheckMissing:
+    """When index.db is missing, startup_check warns without downloading."""
 
-    def test_downloads_when_index_missing(self, tmp_path):
-        """No index.db → _download_index called."""
-        with patch("Poule.cli.startup_check._download_index") as mock_dl:
-            startup_check(tmp_path)
-            mock_dl.assert_called_once_with(tmp_path / "index.db")
-
-    def test_prints_error_on_download_failure(self, tmp_path, capsys):
-        """Download fails → error message printed, no crash."""
-        with patch(
-            "Poule.cli.startup_check._download_index",
-            side_effect=RuntimeError("network error"),
-        ):
-            startup_check(tmp_path)
+    def test_warns_when_index_missing(self, tmp_path, capsys):
+        """No index.db → warning printed, no download attempted."""
+        startup_check(tmp_path)
 
         captured = capsys.readouterr()
-        assert "Download failed" in captured.err
-        assert "download-index" in captured.err
+        assert "WARNING" in captured.err
+        assert "index.db not found" in captured.err
+
+    def test_suggests_rebuild(self, tmp_path, capsys):
+        """Warning message tells user how to fix."""
+        startup_check(tmp_path)
+
+        captured = capsys.readouterr()
+        assert "Rebuild the container image" in captured.err
+
+    def test_returns_without_crash(self, tmp_path):
+        """Missing index.db does not raise."""
+        startup_check(tmp_path)  # should not raise
 
 
 # ===========================================================================

@@ -457,7 +457,7 @@ class SessionManager:
 
         # Read any initial output from coqtop (it may print a welcome line
         # even with -quiet in some versions). Use sentinel to drain.
-        sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
+        sentinel_cmd = f'Check {self._SENTINEL}.\n'
         proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
         await proc.stdin.drain()  # type: ignore[union-attr]
         await self._read_until_sentinel(proc)
@@ -490,7 +490,10 @@ class SessionManager:
     ) -> str:
         """Read coqtop stdout until the sentinel string appears.
 
-        Returns everything before the sentinel line.
+        Returns everything before the sentinel error block.  The sentinel
+        is triggered by ``Check <SENTINEL>.`` which produces a multi-line
+        error.  We strip the entire error block (starting from the
+        ``Toplevel input`` line that references the Check command).
         """
         output_lines: list[str] = []
         stdout = proc.stdout  # type: ignore[union-attr]
@@ -503,10 +506,34 @@ class SessionManager:
                     break
                 line = line_bytes.decode("utf-8", errors="replace")
                 if self._SENTINEL in line:
+                    # Consume remaining lines of the error block
+                    # (the "Error:" line and any trailing blank / prompt lines).
+                    try:
+                        while True:
+                            rest = await asyncio.wait_for(
+                                stdout.readline(), timeout=2.0,
+                            )
+                            if not rest:
+                                break
+                            rest_s = rest.decode("utf-8", errors="replace")
+                            # Stop once we hit the next prompt or EOF
+                            if rest_s.strip() == "" or rest_s.strip().endswith("<"):
+                                break
+                    except asyncio.TimeoutError:
+                        pass
                     break
                 output_lines.append(line)
         except asyncio.TimeoutError:
             pass
+        # Strip any trailing sentinel error preamble lines that appeared
+        # before the sentinel name itself (e.g. "Toplevel input, ..." and
+        # the caret line).
+        while output_lines and (
+            "Toplevel input" in output_lines[-1]
+            or output_lines[-1].strip().startswith(">")
+            or output_lines[-1].strip().startswith("^")
+        ):
+            output_lines.pop()
         return "".join(output_lines).strip()
 
     async def send_command(self, session_id: str, command: str) -> str:
@@ -528,7 +555,7 @@ class SessionManager:
             cmd_text = command.rstrip()
             if not cmd_text.endswith("."):
                 cmd_text += "."
-            sentinel_cmd = f'Fail Check {self._SENTINEL}.\n'
+            sentinel_cmd = f'Check {self._SENTINEL}.\n'
 
             proc.stdin.write((cmd_text + "\n").encode("utf-8"))  # type: ignore[union-attr]
             proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]

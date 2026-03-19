@@ -447,10 +447,11 @@ class TestDataModel:
 # 2. Dependency Scanning — spec §4.1
 # ===========================================================================
 
+@patch("Poule.compat.scanner._opam_package_exists", return_value=True)
 class TestDependencyScanning:
     """§4.1: scan_dependencies(project_dir, hypothetical_additions)."""
 
-    def test_opam_file_extracts_depends(self, tmp_path):
+    def test_opam_file_extracts_depends(self, _mock_exists, tmp_path):
         """Given a .opam file with depends, extract declared dependencies (§4.1 example 1)."""
         scan = _import_scan_dependencies()
         opam_content = textwrap.dedent("""\
@@ -475,7 +476,7 @@ class TestDependencyScanning:
         )
         assert mathcomp_dep.version_constraint is None
 
-    def test_opam_file_source_tracking(self, tmp_path):
+    def test_opam_file_source_tracking(self, _mock_exists, tmp_path):
         """Dependencies from .opam files have source_file pointing to the .opam file (§4.1)."""
         scan = _import_scan_dependencies()
         opam_content = 'opam-version: "2.0"\ndepends: ["coq" {>= "8.18"}]\n'
@@ -485,7 +486,7 @@ class TestDependencyScanning:
         coq_dep = next(d for d in result.dependencies if d.package_name == "coq")
         assert str(opam_path) in coq_dep.source_file
 
-    def test_dune_project_extracts_depends(self, tmp_path):
+    def test_dune_project_extracts_depends(self, _mock_exists, tmp_path):
         """Given a dune-project file with depends, extract entries (§4.1)."""
         scan = _import_scan_dependencies()
         dune_content = textwrap.dedent("""\
@@ -501,7 +502,7 @@ class TestDependencyScanning:
         assert "coq" in names
         assert "coq-mathcomp-ssreflect" in names
 
-    def test_coq_project_infers_package_from_logical_root(self, tmp_path):
+    def test_coq_project_infers_package_from_logical_root(self, _mock_exists, tmp_path):
         """Given _CoqProject with -Q src Mathcomp, infer coq-mathcomp-ssreflect (§4.1 example 2)."""
         scan = _import_scan_dependencies()
         (tmp_path / "_CoqProject").write_text("-Q src Mathcomp\n")
@@ -509,7 +510,7 @@ class TestDependencyScanning:
         names = [d.package_name for d in result.dependencies]
         assert "coq-mathcomp-ssreflect" in names
 
-    def test_hypothetical_additions_marked(self, tmp_path):
+    def test_hypothetical_additions_marked(self, _mock_exists, tmp_path):
         """Hypothetical additions are flagged with hypothetical=true (§4.1 example 3)."""
         scan = _import_scan_dependencies()
         opam_content = 'opam-version: "2.0"\ndepends: ["coq" {>= "8.18"}]\n'
@@ -524,7 +525,7 @@ class TestDependencyScanning:
         coq_dep = next(d for d in result.dependencies if d.package_name == "coq")
         assert coq_dep.hypothetical is False
 
-    def test_unknown_package_added_to_unknown_packages(self, tmp_path):
+    def test_unknown_package_added_to_unknown_packages(self, _mock_exists, tmp_path):
         """Unknown packages go to unknown_packages; scanning continues (§4.1, §7.2)."""
         scan = _import_scan_dependencies()
         opam_content = 'opam-version: "2.0"\ndepends: ["coq" {>= "8.18"}]\n'
@@ -535,7 +536,7 @@ class TestDependencyScanning:
             )
         assert "coq-nonexistent-lib" in result.unknown_packages
 
-    def test_same_package_multiple_files_retains_both(self, tmp_path):
+    def test_same_package_multiple_files_retains_both(self, _mock_exists, tmp_path):
         """Same package in multiple files: retain one entry per source (§4.1)."""
         scan = _import_scan_dependencies()
         opam_content = 'opam-version: "2.0"\ndepends: ["coq" {>= "8.18"}]\n'
@@ -547,21 +548,21 @@ class TestDependencyScanning:
         sources = {d.source_file for d in coq_deps}
         assert len(sources) >= 2
 
-    def test_build_system_field_populated(self, tmp_path):
+    def test_build_system_field_populated(self, _mock_exists, tmp_path):
         """DependencySet.build_system reflects detected build system (§4.1)."""
         scan = _import_scan_dependencies()
         (tmp_path / "dune-project").write_text('(lang dune 3.0)\n(name mylib)\n(depends coq)\n')
         result = asyncio.get_event_loop().run_until_complete(scan(tmp_path, []))
         assert result.build_system is not None
 
-    def test_project_dir_is_absolute(self, tmp_path):
+    def test_project_dir_is_absolute(self, _mock_exists, tmp_path):
         """DependencySet.project_dir is an absolute path (§5)."""
         scan = _import_scan_dependencies()
         (tmp_path / "mylib.opam").write_text('opam-version: "2.0"\ndepends: ["coq"]\n')
         result = asyncio.get_event_loop().run_until_complete(scan(tmp_path, []))
         assert Path(result.project_dir).is_absolute()
 
-    def test_no_files_modified(self, tmp_path):
+    def test_no_files_modified(self, _mock_exists, tmp_path):
         """MAINTAINS: No project files are modified (§4.1)."""
         scan = _import_scan_dependencies()
         opam_content = 'opam-version: "2.0"\ndepends: ["coq"]\n'
@@ -653,10 +654,11 @@ class TestDependencyScanningErrors:
 # 4. Opam Metadata Resolution — spec §4.2
 # ===========================================================================
 
+@patch("Poule.compat.resolver.shutil.which", return_value="/usr/bin/opam")
 class TestOpamMetadataResolution:
     """§4.2: resolve_metadata(dependency_set)."""
 
-    def test_returns_resolved_constraint_tree(self):
+    def test_returns_resolved_constraint_tree(self, _mock_which):
         """resolve_metadata returns a ResolvedConstraintTree (§4.2)."""
         resolve = _import_resolve_metadata()
         (
@@ -678,7 +680,7 @@ class TestOpamMetadataResolution:
         assert isinstance(result, ResolvedConstraintTree)
         assert "coq-mathcomp-ssreflect" in result.root_dependencies
 
-    def test_transitive_dependencies_expanded(self):
+    def test_transitive_dependencies_expanded(self, _mock_which):
         """Transitive dependencies are included in the tree (§4.2 example 1)."""
         resolve = _import_resolve_metadata()
         ds = _make_dependency_set(
@@ -710,7 +712,7 @@ class TestOpamMetadataResolution:
             result = asyncio.get_event_loop().run_until_complete(resolve(ds))
         assert "coq" in result.nodes
 
-    def test_circular_dependency_detected(self):
+    def test_circular_dependency_detected(self, _mock_which):
         """Circular opam dependency: cycle noted, expansion stops (§4.2 example 2)."""
         resolve = _import_resolve_metadata()
         ds = _make_dependency_set(
@@ -734,7 +736,7 @@ class TestOpamMetadataResolution:
         for pkg, count in call_count.items():
             assert count <= 1, f"{pkg} queried {count} times"
 
-    def test_opam_timeout_recorded(self):
+    def test_opam_timeout_recorded(self, _mock_which):
         """opam show timeout: recorded, remaining packages resolved (§4.2 example 3, §7.2)."""
         resolve = _import_resolve_metadata()
         ds = _make_dependency_set(
@@ -754,7 +756,7 @@ class TestOpamMetadataResolution:
         # pkg-ok should be in the tree
         assert "pkg-ok" in result.nodes
 
-    def test_cache_prevents_duplicate_queries(self):
+    def test_cache_prevents_duplicate_queries(self, _mock_which):
         """Each package queried at most once — results cached within the run (§4.2)."""
         resolve = _import_resolve_metadata()
         ds = _make_dependency_set(
@@ -779,7 +781,7 @@ class TestOpamMetadataResolution:
             asyncio.get_event_loop().run_until_complete(resolve(ds))
         assert query_counts.get("coq", 0) == 1, "coq should be queried exactly once"
 
-    def test_only_read_only_opam_commands(self):
+    def test_only_read_only_opam_commands(self, _mock_which):
         """MAINTAINS: Only opam show is invoked, never install/upgrade (§4.2, §6)."""
         resolve = _import_resolve_metadata()
         ds = _make_dependency_set(

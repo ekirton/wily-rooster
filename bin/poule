@@ -11,6 +11,12 @@
 
 set -euo pipefail
 
+# Guard: these launchers must run on the host, not inside the container.
+if [ -f /.dockerenv ]; then
+    echo "Error: $(basename "$0") is a host launcher and cannot run inside the container." >&2
+    exit 1
+fi
+
 IMAGE="ghcr.io/ekirton/poule"
 
 # ── Project directory ─────────────────────────────────────────────────────────
@@ -284,27 +290,6 @@ alias claude='claude --dangerously-skip-permissions'
 EOF
 fi
 
-# ── First-run: download Coq search index ──────────────────────────────────────
-DATA_DIR="$CONTAINER_HOME/data"
-mkdir -p "$DATA_DIR"
-
-if [ ! -f "$DATA_DIR/index.db" ]; then
-    echo ""
-    echo "Downloading Coq search index (first run only)..."
-    if docker run --rm \
-        --platform linux/amd64 \
-        -v "$DATA_DIR:/data" \
-        --entrypoint sh \
-        "$IMAGE" \
-        -c 'uv run --project /app python -m Poule.cli download-index --output /data/index.db'; then
-        echo "Index downloaded successfully."
-    else
-        echo "Warning: Index download failed. Retry from inside the container:"
-        echo "  uv run --project /app python -m Poule.cli download-index --output ~/data/index.db"
-    fi
-    echo ""
-fi
-
 # ── Dynamic port scanning ────────────────────────────────────────────────────
 HOST_PORT=3000
 while lsof -iTCP:$HOST_PORT -sTCP:LISTEN -t >/dev/null 2>&1; do
@@ -332,7 +317,6 @@ if [ ${#ARGS[@]} -eq 0 ]; then
         -p $HOST_PORT:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
-        -v "$DATA_DIR:/data" \
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e HOME="/home/$HOST_USER" \
@@ -345,7 +329,6 @@ elif [[ "${ARGS[0]}" =~ ^($POULE_SUBCOMMANDS)$ ]]; then
         -p $HOST_PORT:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
-        -v "$DATA_DIR:/data" \
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e HOME="/home/$HOST_USER" \
@@ -359,7 +342,6 @@ else
         -p $HOST_PORT:3000 \
         -v "$PROJECT_DIR:$PROJECT_DIR" \
         -v "$CONTAINER_HOME:/home/$HOST_USER" \
-        -v "$DATA_DIR:/data" \
         -w "$PROJECT_DIR" \
         -e ANTHROPIC_API_KEY \
         -e HOME="/home/$HOST_USER" \

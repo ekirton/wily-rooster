@@ -92,7 +92,7 @@ Make sure `~/bin` is on your `PATH` (add `export PATH="$HOME/bin:$PATH"` if need
 poule          # launches Claude Code with your project mounted
 ```
 
-Everything runs inside the container — no local Coq, Python, or opam installation required. All six supported libraries are pre-installed in the container for proof interaction. Claude Code is baked into the image for instant startup. On first run, the launcher pulls the image, initializes a persistent home directory at `~/poule-home`, and downloads the search index for all 6 libraries automatically.
+Everything runs inside the container — no local Coq, Python, or opam installation required. All six supported libraries are pre-installed in the container for proof interaction. Claude Code and the search index are baked into the image for instant startup. On first run, the launcher pulls the image and initializes a persistent home directory at `~/poule-home`.
 
 To run a one-off command instead:
 
@@ -104,7 +104,7 @@ If you want to use a different project for a one-off session, just `cd` into it 
 
 ### Library indexes
 
-All 6 supported libraries are indexed automatically on first run. The container checks whether the search index is present on every startup and downloads it if missing. A startup message confirms which libraries are currently indexed.
+All 6 supported libraries are indexed and baked into the container image at build time. The index is validated against the installed Coq and library versions during the Docker build — a version mismatch fails the build. A startup message confirms which libraries are currently indexed.
 
 ### Persistent home directory
 
@@ -113,8 +113,7 @@ State is preserved across sessions in `~/poule-home`:
 ```
 ~/poule-home/
 ├── .claude/          # Claude Code settings, MCP config, auth
-└── data/
-    └── index.db      # Coq search index (downloaded on first run)
+└── .ssh/             # SSH keys (copy from host)
 ```
 
 To set up git and SSH inside the container, copy your existing config:
@@ -126,20 +125,12 @@ cp -r ~/.ssh ~/poule-home/.ssh
 
 ### Updating
 
-The launcher pulls the latest image each time it runs and checks for Claude Code updates. If a newer Claude Code version is available, it defers the update to exit time so your session isn't interrupted.
+The launcher pulls the latest image each time it runs and checks for Claude Code updates. If a newer Claude Code version is available, it defers the update to exit time so your session isn't interrupted. The search index is baked into each image — pulling a new image automatically gets the latest index.
 
 ```bash
-poule --update           # Pull latest image + update library indexes
 poule --no-pull          # Skip pulling the latest image
 poule --no-auto-update   # Skip Claude Code update check
 poule --rebuild          # Force update Claude Code immediately
-```
-
-To force re-download of the search index:
-
-```bash
-rm ~/poule-home/data/index.db
-poule    # re-download triggers automatically on next startup
 ```
 
 ## Use with Claude Code

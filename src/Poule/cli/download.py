@@ -16,7 +16,8 @@ from Poule.paths import get_model_dir
 from Poule.storage.merge import merge_indexes
 
 GITHUB_API_URL = "https://api.github.com/repos/ekirton/Poule/releases"
-TAG_PREFIX = "index-v"
+TAG_LIBRARIES = "index-libraries"
+TAG_MERGED = "index-merged"
 CHUNK_SIZE = 65536  # 64 KB
 ALL_LIBRARIES = ["stdlib", "stdpp", "mathcomp", "flocq", "coqinterval", "coquelicot"]
 
@@ -30,7 +31,12 @@ def get_libraries_dir() -> Path:
 
 
 def _find_latest_release() -> dict:
-    """Find the most recent GitHub Release with an index tag."""
+    """Find the most recent GitHub Release with an index tag.
+
+    Scans all releases for a tag starting with ``index-``.
+    Kept for backward compatibility with tests; new code should
+    use :func:`_find_release` with an explicit tag.
+    """
     req = urllib.request.Request(
         GITHUB_API_URL,
         headers={"Accept": "application/vnd.github+json"},
@@ -42,10 +48,31 @@ def _find_latest_release() -> dict:
         raise click.ClickException(f"Failed to reach GitHub API: {exc}") from exc
 
     for release in releases:
-        if release.get("tag_name", "").startswith(TAG_PREFIX):
+        tag = release.get("tag_name", "")
+        if tag.startswith("index-"):
             return release
 
     raise click.ClickException("No index release found on GitHub.")
+
+
+def _find_release(tag: str) -> dict:
+    """Find a GitHub Release by exact tag name."""
+    url = f"{GITHUB_API_URL}/tags/{tag}"
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise click.ClickException(
+                f"No release found with tag '{tag}'."
+            ) from exc
+        raise click.ClickException(f"Failed to reach GitHub API: {exc}") from exc
+    except urllib.error.URLError as exc:
+        raise click.ClickException(f"Failed to reach GitHub API: {exc}") from exc
 
 
 def _find_asset(release: dict, name: str) -> dict:
@@ -188,8 +215,8 @@ def download_index(
             f"{model_path} already exists. Use --force to overwrite."
         )
 
-    # 4. Resolve latest release
-    click.echo("Finding latest index release...", err=True)
+    # 4. Resolve libraries release
+    click.echo("Finding index release...", err=True)
     release = _find_latest_release()
     tag = release["tag_name"]
     click.echo(f"Found release: {tag}", err=True)

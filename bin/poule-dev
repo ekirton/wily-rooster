@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+# Guard: these launchers must run on the host, not inside the container.
+if [ -f /.dockerenv ]; then
+    echo "Error: $(basename "$0") is a host launcher and cannot run inside the container." >&2
+    exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR/.."
 DEV_IMAGE="poule:dev"

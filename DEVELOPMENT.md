@@ -55,7 +55,6 @@ The launchers manage:
 - Image builds/pulls with proper host user mapping
 - Persistent home directory at `~/poule-home/`
 - Claude Code MCP server auto-configuration
-- Search index download on first run
 
 ### MCP server lifecycle
 
@@ -100,14 +99,9 @@ poule-dev --rebuild          # Force rebuild the dev image
 poule-dev --no-auto-update   # Skip Claude Code version check
 ```
 
-To download a newer search index:
+The search index is baked into the container image at build time. Pulling a new image automatically gets the latest index.
 
-```bash
-rm ~/poule-home/data/index.db
-poule   # Triggers automatic re-download
-```
-
-To also download the neural premise selection model:
+To download the neural premise selection model separately:
 
 ```bash
 poule-dev uv run python -m poule.cli download-index --output ~/data/index.db --include-model
@@ -282,7 +276,14 @@ gh pr merge <number> --squash --subject "Custom commit message"
 
 ## Publishing Releases
 
-Prebuilt search indexes and neural model checkpoints are distributed via [GitHub Releases](https://github.com/ekirton/Poule/releases). All 6 per-library indexes are published in a single release. Users download them with `uv run python -m poule.cli download-index` instead of building from source.
+Prebuilt search indexes and neural model checkpoints are distributed via two [GitHub Releases](https://github.com/ekirton/Poule/releases):
+
+| Release tag | Contents |
+|-------------|----------|
+| `index-libraries` | 6 per-library `index-*.db` files + `manifest.json` |
+| `index-merged` | Single merged `index.db` + `manifest.json` (+ optional ONNX model) |
+
+The `index-merged` release is a **build-time dependency** of the Docker image. The Dockerfile downloads `index.db` during build and validates that library versions in the manifest match the installed opam packages. A version mismatch fails the build. Matching indexes must be published before merging Dockerfile changes that bump library versions.
 
 ### When to publish
 
@@ -300,33 +301,44 @@ Publish a new release when any of these change:
 
 ### Publishing
 
-1. Build per-library indexes:
+1. Check what upstream versions are available:
+
+```bash
+./scripts/check-latest.sh
+```
+
+2. Search the web for version incompatibilities between the libraries before choosing versions to bump.
+
+3. Update pinned versions in `Dockerfile` (do not commit yet), exit the container, and run `poule-dev` to rebuild with the new versions.
+
+4. Build per-library indexes:
 
 ```bash
 ./scripts/build-indexes.sh
 ```
 
-2. Publish all 6 per-library indexes:
+5. Point the MCP server at the newly built index and restart it:
 
 ```bash
-./scripts/publish-release.sh index-stdlib.db index-mathcomp.db index-stdpp.db index-flocq.db index-coquelicot.db index-coqinterval.db
+export POULE_MCP_DB=~/index.db
+poule-mcp restart
 ```
 
-3. Or include the neural model:
+6. **Decision gate.** Integration tests run automatically during the build, but verify the results yourself — check that proofs compile, indexes look correct, and nothing regressed. Decide whether to proceed with the version bump or roll back.
+
+7. Publish releases (must precede the PR — the Docker build downloads the index from these releases):
 
 ```bash
-./scripts/publish-release.sh index-stdlib.db index-mathcomp.db index-stdpp.db index-flocq.db index-coquelicot.db index-coqinterval.db --model models/neural-premise-selector.onnx
+./scripts/publish-indexes.sh
+# Or include the neural model:
+./scripts/publish-indexes.sh --model models/neural-premise-selector.onnx
 ```
 
-The script reads version metadata from each database, computes SHA-256 checksums, generates a `manifest.json`, and creates a tagged release. The tag format is `index-v{schema}-coq{coq_version}` (e.g., `index-v1-coq8.19`).
-
-To replace an existing release (e.g., during nightly re-index):
-
-```bash
-./scripts/publish-release.sh --replace index-stdlib.db index-mathcomp.db index-stdpp.db index-flocq.db index-coquelicot.db index-coqinterval.db
-```
+8. Create a branch, commit the `Dockerfile` changes, push, and open a PR with auto-merge. The CI/CD pipeline will build a new container image with the updated index baked in.
 
 ### Release assets
+
+**`index-libraries` release:**
 
 | Asset | Description |
 |-------|-------------|
@@ -337,27 +349,16 @@ To replace an existing release (e.g., during nightly re-index):
 | `index-coquelicot.db` | Per-library index: Coquelicot |
 | `index-coqinterval.db` | Per-library index: CoqInterval |
 | `manifest.json` | Version metadata and SHA-256 checksums |
+
+**`index-merged` release:**
+
+| Asset | Description |
+|-------|-------------|
+| `index.db` | Merged search index (all 6 libraries) |
+| `manifest.json` | Version metadata, SHA-256, and library versions |
 | `neural-premise-selector.onnx` | INT8 ONNX model (optional) |
 
-The download client (`src/poule/cli/download.py`) fetches `manifest.json` first, then downloads all 6 per-library indexes, verifies checksums, and merges them into a single `index.db`. See [`specification/prebuilt-distribution.md`](specification/prebuilt-distribution.md) for the full protocol.
-
-### Automated nightly re-index
-
-A pair of scripts automates the release cycle:
-
-| Script | Runs on | Purpose |
-|--------|---------|---------|
-| `scripts/nightly-reindex.sh` | Inside container | Detect new upstream library versions, re-extract changed libraries, publish updated release |
-| `scripts/reindex-cron.sh` | Host machine | Thin wrapper that launches the container and runs the inner script |
-
-The nightly script compares installed library versions (via `coqc` and `opam`) against the last-published release manifest. Only changed libraries are re-extracted; unchanged assets are carried forward. To schedule daily:
-
-```bash
-# Example crontab entry
-0 3 * * * GH_TOKEN=ghp_... /path/to/scripts/reindex-cron.sh >> /var/log/poule-reindex.log 2>&1
-```
-
-Requires `GH_TOKEN` with `contents:write` scope. See [`specification/nightly-reindex.md`](specification/nightly-reindex.md) for the full protocol.
+The Dockerfile fetches `manifest.json` from `index-merged`, downloads `index.db`, verifies its SHA-256, and validates library versions against installed opam packages. See [`specification/prebuilt-distribution.md`](specification/prebuilt-distribution.md) for the full protocol.
 
 ## Documentation Layers
 

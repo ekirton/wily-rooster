@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 1000
 
+# Restart coq-lsp every N .vo files during declaration collection to
+# prevent OOM.  Each Require Import permanently loads a module into the
+# Coq process; restarting is the only way to reclaim that memory.
+BACKEND_RESTART_INTERVAL = 100
+
 # Module-level singleton for text-based type parsing
 _type_parser_instance = None
 
@@ -489,6 +494,14 @@ def run_extraction(
                     progress_callback(
                         f"Collecting declarations [{idx}/{len(all_vo_files)}]"
                     )
+                # Restart coq-lsp periodically to keep memory bounded.
+                if idx > 1 and (idx - 1) % BACKEND_RESTART_INTERVAL == 0:
+                    logger.info(
+                        "Restarting coq-lsp after %d files to reclaim memory",
+                        idx - 1,
+                    )
+                    backend.stop()
+                    backend.start()
                 raw_decls = backend.list_declarations(vo_path)
                 for name, kind, constr_t in raw_decls:
                     all_declarations.append((name, kind, constr_t, vo_path))

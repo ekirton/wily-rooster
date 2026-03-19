@@ -6,7 +6,6 @@ libraries to index.
 
 from __future__ import annotations
 
-import os
 import tomllib
 from pathlib import Path
 
@@ -55,11 +54,7 @@ def load_config(libraries_dir: Path) -> list[str]:
 
 
 def get_libraries_dir() -> Path:
-    """Return the path to the libraries directory.
-
-    Uses ``POULE_LIBRARIES_PATH`` if set, otherwise ``~/poule-libraries``.
-    """
-    env = os.environ.get("POULE_LIBRARIES_PATH")
-    if env is not None:
-        return Path(env)
-    return Path.home() / "poule-libraries"
+    """Return the path to the libraries directory (``~/poule-home/data``)."""
+    d = Path.home() / "poule-home" / "data"
+    d.mkdir(parents=True, exist_ok=True)
+    return d

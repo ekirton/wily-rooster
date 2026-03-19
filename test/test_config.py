@@ -9,9 +9,7 @@ Import paths under test:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -104,17 +102,13 @@ class TestGetLibrariesDir:
     """get_libraries_dir resolves the libraries directory path."""
 
     def test_default_path(self):
-        """§4.2: Without env var, returns ~/poule-libraries."""
-        with patch.dict(os.environ, {}, clear=False):
-            # Remove POULE_LIBRARIES_PATH if set
-            env = os.environ.copy()
-            env.pop("POULE_LIBRARIES_PATH", None)
-            with patch.dict(os.environ, env, clear=True):
-                result = get_libraries_dir()
-        assert result == Path.home() / "poule-libraries"
+        """§4.2: Returns ~/poule-home/data."""
+        result = get_libraries_dir()
+        assert result == Path.home() / "poule-home" / "data"
 
-    def test_env_var_override(self):
-        """§4.2: POULE_LIBRARIES_PATH overrides default."""
-        with patch.dict(os.environ, {"POULE_LIBRARIES_PATH": "/custom/path"}):
-            result = get_libraries_dir()
-        assert result == Path("/custom/path")
+    def test_creates_directory(self, tmp_path, monkeypatch):
+        """§4.2: Creates directory if it does not exist."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        result = get_libraries_dir()
+        assert result == tmp_path / "poule-home" / "data"
+        assert result.is_dir()

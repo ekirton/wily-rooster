@@ -50,6 +50,8 @@ RUN eval $(opam env --switch=coq) && opam install -y coq-stdpp && opam clean -a 
 # then rewrite hardcoded /root/.opam paths so ocamlfind and coq-lsp work
 # for non-root users.
 RUN mv /root/.opam /opt/opam && chmod -R a+rX /opt/opam && \
+    chmod a+rwx /opt/opam/log && \
+    chmod a+rw /opt/opam/config.lock /opt/opam/lock && \
     find /opt/opam -type f \( -name "*.conf" -o -name "*.config" -o -name "*.install" \) \
          -exec sed -i 's|/root/\.opam|/opt/opam|g' {} + && \
     printf 'stdlib="/opt/opam/coq/lib/ocaml"\n' >> /opt/opam/coq/lib/findlib.conf

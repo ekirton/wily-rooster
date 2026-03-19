@@ -98,18 +98,19 @@ def structural_score(
 
 
 def rrf_fuse(
-    ranked_lists: Sequence[Sequence[str]],
+    ranked_lists: Sequence[Sequence],
     k: int = 60,
-) -> list[tuple[str, float]]:
-    """Reciprocal Rank Fusion over multiple ranked ID lists.
+) -> list[tuple]:
+    """Reciprocal Rank Fusion over multiple ranked lists.
 
-    Each element of *ranked_lists* is a sequence of declaration IDs ordered by
-    score descending.  Returns ``[(decl_id, rrf_score), ...]`` sorted by RRF
-    score descending.
+    Each element of *ranked_lists* is a sequence of ``(decl_id, score)`` pairs
+    ordered by score descending.  Returns ``[(decl_id, rrf_score), ...]``
+    sorted by RRF score descending.
     """
-    scores: dict[str, float] = defaultdict(float)
+    scores: defaultdict = defaultdict(float)
     for ranked in ranked_lists:
-        for rank_0, decl_id in enumerate(ranked):
+        for rank_0, item in enumerate(ranked):
+            decl_id = item[0] if isinstance(item, tuple) else item
             scores[decl_id] += 1.0 / (k + rank_0 + 1)  # 1-based rank
     # Sort descending by score, then by insertion order for ties (stable sort)
     return sorted(scores.items(), key=lambda item: item[1], reverse=True)

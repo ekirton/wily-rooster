@@ -424,6 +424,162 @@ class TestSearchByType:
 
 
 # ---------------------------------------------------------------------------
+# 8b. search_by_type: real rrf_fuse with actual channel output types
+# ---------------------------------------------------------------------------
+
+
+class TestSearchByTypeRealFusion:
+    """Exercise search_by_type WITHOUT mocking rrf_fuse, so the real fusion
+    function receives the actual output types from each channel.
+
+    This is the contract test for the interaction between search_by_type
+    and rrf_fuse.  Existing test_three_channels_fused mocks rrf_fuse
+    entirely, hiding the type mismatch between channel outputs and
+    rrf_fuse's expected input format.
+
+    Per spec (fusion.md §4.5): rrf_fuse expects lists of (decl_id, score)
+    pairs.  score_candidates returns list[tuple[int, float]], mepo_select
+    returns list[tuple[int, float]], fts_search returns list[SearchResult].
+    All three must be converted to a compatible format before passing to
+    rrf_fuse."""
+
+    @patch("Poule.pipeline.search.fts_search")
+    @patch("Poule.pipeline.search.fts_query")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_real_rrf_fuse_with_channel_outputs(
+        self,
+        mock_coq_norm,
+        mock_cse_norm,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+    ):
+        """search_by_type must pass the real rrf_fuse without TypeError.
+
+        Channels return:
+        - score_candidates: [(1, 0.85), (2, 0.70)]  (int, float) tuples
+        - mepo_select:      [(2, 0.90), (3, 0.60)]  (int, float) tuples
+        - fts_search:       [SearchResult(...)]       SearchResult objects
+
+        rrf_fuse must handle all three without raising TypeError."""
+        from Poule.models.responses import SearchResult
+
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq_norm.return_value = MagicMock()
+        mock_cse_norm.return_value = cse_tree
+        mock_wl_hist.return_value = {"label_A": 2}
+        mock_wl_screen.return_value = [(1, 0.9), (2, 0.8)]
+
+        # score_candidates returns list[tuple[int, float]]
+        mock_score.return_value = [(1, 0.85), (2, 0.70)]
+
+        # mepo_select returns list[tuple[int, float]]
+        mock_extract.return_value = {"Coq.Init.Nat.add"}
+        mock_mepo.return_value = [(2, 0.90), (3, 0.60)]
+
+        # fts_search returns list[SearchResult]
+        mock_fts_query.return_value = "nat AND nat AND nat"
+        mock_fts_search.return_value = [
+            SearchResult(
+                name="Coq.Init.Nat.add",
+                statement="forall n m : nat, ...",
+                type="nat -> nat -> nat",
+                module="Coq.Init.Nat",
+                kind="Lemma",
+                score=0.95,
+            ),
+            SearchResult(
+                name="Coq.Init.Nat.mul",
+                statement="forall n m : nat, ...",
+                type="nat -> nat -> nat",
+                module="Coq.Init.Nat",
+                kind="Lemma",
+                score=0.80,
+            ),
+        ]
+
+        # This must not raise TypeError
+        results = search_by_type(ctx, "nat -> nat -> nat", limit=20)
+
+        # Results must be a non-empty list (channels returned data)
+        assert isinstance(results, list)
+        assert len(results) > 0
+
+    @patch("Poule.pipeline.search.fts_search")
+    @patch("Poule.pipeline.search.fts_query")
+    @patch("Poule.pipeline.search.mepo_select")
+    @patch("Poule.pipeline.search.extract_consts")
+    @patch("Poule.pipeline.search.score_candidates")
+    @patch("Poule.pipeline.search.wl_screen")
+    @patch("Poule.pipeline.search.wl_histogram")
+    @patch("Poule.pipeline.search.cse_normalize")
+    @patch("Poule.pipeline.search.coq_normalize")
+    def test_real_rrf_fuse_result_ids_are_declaration_identifiers(
+        self,
+        mock_coq_norm,
+        mock_cse_norm,
+        mock_wl_hist,
+        mock_wl_screen,
+        mock_score,
+        mock_extract,
+        mock_mepo,
+        mock_fts_query,
+        mock_fts_search,
+    ):
+        """After RRF fusion, result decl_ids must be the original identifiers
+        from the channels — not tuples, not SearchResult objects."""
+        from Poule.models.responses import SearchResult
+
+        parser = _mock_parser()
+        ctx = _mock_context(parser=parser)
+
+        cse_tree = MagicMock()
+        cse_tree.node_count = 10
+        mock_coq_norm.return_value = MagicMock()
+        mock_cse_norm.return_value = cse_tree
+        mock_wl_hist.return_value = {}
+        mock_wl_screen.return_value = [(1, 0.9)]
+        mock_score.return_value = [(1, 0.85)]
+        mock_extract.return_value = {"Coq.Init.Nat.add"}
+        mock_mepo.return_value = [(1, 0.70)]
+        mock_fts_query.return_value = "nat"
+        mock_fts_search.return_value = [
+            SearchResult(
+                name="Coq.Init.Nat.add",
+                statement="",
+                type="nat -> nat -> nat",
+                module="Coq.Init.Nat",
+                kind="Lemma",
+                score=0.95,
+            ),
+        ]
+
+        results = search_by_type(ctx, "nat -> nat -> nat", limit=20)
+
+        # Each fused result should have a decl_id that is either an int
+        # or a string — never a tuple or a SearchResult object.
+        for r in results:
+            decl_id = r[0] if isinstance(r, tuple) else r
+            assert isinstance(decl_id, (int, str)), (
+                f"Expected decl_id to be int or str, got {type(decl_id).__name__}: {decl_id!r}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # 9. search_by_type: ParseError propagated
 # ---------------------------------------------------------------------------
 

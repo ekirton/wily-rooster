@@ -166,12 +166,14 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     # Step 4: Lexical channel via FTS
     query = fts_query(type_expr)
     fts_results = fts_search(query, limit=limit, reader=ctx.reader)
+    # Convert SearchResult objects to (name, score) pairs for RRF
+    fts_pairs = [(r.name, r.score) for r in fts_results]
 
     # Step 5: RRF fusion
-    fused = rrf_fuse([structural_scored, mepo_results, fts_results], k=60)
+    fused = rrf_fuse([structural_scored, mepo_results, fts_pairs], k=60)
 
-    # Step 6: Sort by score descending, take top limit
-    fused = sorted(fused, key=lambda r: r.score if hasattr(r, 'score') else r[1], reverse=True)
+    # Step 6: Sort by RRF score descending, take top limit
+    fused = sorted(fused, key=lambda r: r[1] if isinstance(r, tuple) else r.score, reverse=True)
     return fused[:limit]
 
 

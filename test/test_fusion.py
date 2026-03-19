@@ -421,3 +421,87 @@ class TestRrfFuseItemInAllLists:
         assert scores["y"] == pytest.approx(1 / 62, abs=1e-6)
         # x should be ranked first
         assert results[0][0] == "x"
+
+
+# ===========================================================================
+# 17. rrf_fuse with (decl_id, score) pairs per spec §4.5
+# ===========================================================================
+
+
+class TestRrfFuseWithScoredPairs:
+    """Spec §4.5: ranked_lists contains (decl_id, score) pairs ordered by
+    score descending.  rrf_fuse must extract decl_id from each pair and
+    compute RRF scores based on rank position.
+
+    Existing tests 12-16 pass flat ID lists.  These tests verify the
+    spec-required input format: lists of (decl_id, score) tuples."""
+
+    def test_two_channels_with_scored_pairs(self):
+        """Same as spec example (test 12), but using (decl_id, score) pairs
+        as the spec requires.
+
+        List A: [(d1, 0.9), (d2, 0.8), (d3, 0.7)]
+        List B: [(d2, 0.95), (d3, 0.85), (d4, 0.75)]
+
+        Expected RRF scores (k=60):
+        d1: 1/(60+1) = 0.016393
+        d2: 1/(60+2) + 1/(60+1) = 0.032522
+        d3: 1/(60+3) + 1/(60+2) = 0.032002
+        d4: 1/(60+3) = 0.015873
+
+        Order: [d2, d3, d1, d4]
+        """
+        list_a = [("d1", 0.9), ("d2", 0.8), ("d3", 0.7)]
+        list_b = [("d2", 0.95), ("d3", 0.85), ("d4", 0.75)]
+
+        results = rrf_fuse([list_a, list_b], k=60)
+
+        result_ids = [r[0] for r in results]
+        assert result_ids == ["d2", "d3", "d1", "d4"]
+
+        scores = {r[0]: r[1] for r in results}
+        assert scores["d1"] == pytest.approx(1 / 61, abs=1e-6)
+        assert scores["d2"] == pytest.approx(1 / 62 + 1 / 61, abs=1e-6)
+        assert scores["d3"] == pytest.approx(1 / 63 + 1 / 62, abs=1e-6)
+        assert scores["d4"] == pytest.approx(1 / 63, abs=1e-6)
+
+    def test_single_channel_scored_pairs(self):
+        """Single list of (decl_id, score) pairs preserves rank order."""
+        results = rrf_fuse([
+            [("a", 0.9), ("b", 0.7), ("c", 0.5)],
+        ], k=60)
+
+        result_ids = [r[0] for r in results]
+        assert result_ids == ["a", "b", "c"]
+
+        scores = {r[0]: r[1] for r in results}
+        assert scores["a"] == pytest.approx(1 / 61, abs=1e-6)
+        assert scores["b"] == pytest.approx(1 / 62, abs=1e-6)
+        assert scores["c"] == pytest.approx(1 / 63, abs=1e-6)
+
+    def test_mixed_integer_decl_ids(self):
+        """rrf_fuse must work when decl_ids are integers (as returned by
+        score_candidates and mepo_select)."""
+        list_a = [(1, 0.9), (2, 0.8)]
+        list_b = [(2, 0.95), (3, 0.85)]
+
+        results = rrf_fuse([list_a, list_b], k=60)
+
+        result_ids = [r[0] for r in results]
+        # decl_id 2 appears in both lists → highest RRF score
+        assert result_ids[0] == 2
+
+        scores = {r[0]: r[1] for r in results}
+        assert scores[2] == pytest.approx(1 / 62 + 1 / 61, abs=1e-6)
+        assert scores[1] == pytest.approx(1 / 61, abs=1e-6)
+        assert scores[3] == pytest.approx(1 / 62, abs=1e-6)
+
+    def test_empty_scored_list_contributes_nothing(self):
+        """An empty list among scored-pair lists contributes nothing."""
+        results = rrf_fuse([
+            [("a", 0.9), ("b", 0.7)],
+            [],
+        ], k=60)
+
+        result_ids = [r[0] for r in results]
+        assert result_ids == ["a", "b"]

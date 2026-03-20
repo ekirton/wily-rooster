@@ -42,4 +42,4 @@ jobs:
         run: |
           docker run --rm --entrypoint uv \
             ${{ env.IMAGE }}:sha-${{ github.sha }} \
-            run pytest -m requires_coq -v
+            run pytest test/integration/ -v

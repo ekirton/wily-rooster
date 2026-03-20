@@ -1700,11 +1700,15 @@ class TestMetadataOnlyConstrT:
 
     def test_dict_constr_t_parses_type_signature(self, caplog):
         """A dict constr_t with type_signature produces a valid result with
-        a normalized tree, symbol set, and WL vector."""
+        a normalized tree, symbol set, and WL vector.  When the backend has
+        a locate() method, symbols are resolved to FQNs (§4.4 step 5)."""
         import logging
         from Poule.extraction.pipeline import process_declaration
 
         backend = _make_mock_backend()
+        backend.locate.side_effect = lambda name: {
+            "nat": "Coq.Init.Datatypes.nat",
+        }.get(name)
         constr_t = {
             "name": "Nat.add",
             "type_signature": "nat -> nat -> nat",
@@ -1719,7 +1723,7 @@ class TestMetadataOnlyConstrT:
 
         assert result is not None
         assert result.tree is not None
-        assert "nat" in result.symbol_set
+        assert "Coq.Init.Datatypes.nat" in result.symbol_set
         assert len(result.wl_vector) > 0
         # No normalization warning should be logged
         normalization_warnings = [
@@ -1727,6 +1731,31 @@ class TestMetadataOnlyConstrT:
             if "Normalization failed" in r.message
         ]
         assert normalization_warnings == []
+
+    def test_dict_constr_t_without_locate_keeps_short_names(self, caplog):
+        """When the backend has no locate() method, symbols are stored as
+        short display names (fallback behavior)."""
+        import logging
+        from Poule.extraction.pipeline import process_declaration
+
+        backend = _make_mock_backend()
+        # Remove locate so hasattr(backend, 'locate') could be True (Mock),
+        # but make it raise to simulate unavailability
+        del backend.locate
+        constr_t = {
+            "name": "Nat.add",
+            "type_signature": "nat -> nat -> nat",
+            "source": "coq-lsp",
+        }
+
+        with caplog.at_level(logging.WARNING):
+            result = process_declaration(
+                "Nat.add", "Definition", constr_t, backend, "/fake/Nat.vo",
+                statement="Nat.add = ...", dependency_names=[],
+            )
+
+        assert result is not None
+        assert "nat" in result.symbol_set
 
     def test_dict_constr_t_without_type_signature_has_no_tree(self):
         """A dict constr_t without type_signature produces partial result."""
@@ -2120,3 +2149,140 @@ class TestDependencyRelationValues:
             assert relation in _VALID_RELATIONS, (
                 f"Invalid relation value: {relation!r} (expected one of {_VALID_RELATIONS})"
             )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 20. Symbol FQN Resolution (§4.4.1)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestResolveSymbols:
+    """resolve_symbols maps short display names to FQNs via Locate queries (spec §4.4.1)."""
+
+    def test_resolves_short_names_to_fqns(self):
+        """Short names like 'nat' are resolved to FQNs via backend Locate queries."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+        backend.locate.return_value = "Coq.Init.Datatypes.nat"
+
+        resolved = resolve_symbols({"nat"}, backend)
+
+        assert "Coq.Init.Datatypes.nat" in resolved
+
+    def test_infix_operators_resolved(self):
+        """Infix operators like '+' are resolved via Locate (spec §4.4.1)."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+        backend.locate.side_effect = lambda name: {
+            "+": "Coq.Init.Nat.add",
+            "nat": "Coq.Init.Datatypes.nat",
+        }.get(name)
+
+        resolved = resolve_symbols({"+", "nat"}, backend)
+
+        assert "Coq.Init.Nat.add" in resolved
+        assert "Coq.Init.Datatypes.nat" in resolved
+
+    def test_unresolvable_names_kept_as_is(self):
+        """Names that cannot be resolved are stored as-is (spec §4.4.1 fallback)."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+        backend.locate.return_value = None
+
+        resolved = resolve_symbols({"my_custom_def"}, backend)
+
+        assert "my_custom_def" in resolved
+
+    def test_cache_eliminates_redundant_queries(self):
+        """Repeated short names only trigger one Locate query per unique name."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+        call_count = 0
+        def counting_locate(name):
+            nonlocal call_count
+            call_count += 1
+            return f"Resolved.{name}"
+
+        backend.locate = counting_locate
+
+        # Call twice with the same symbol set — second call should use cache
+        cache = {}
+        resolve_symbols({"nat"}, backend, cache=cache)
+        resolve_symbols({"nat"}, backend, cache=cache)
+
+        assert call_count == 1
+
+    def test_ambiguous_names_expand_to_all(self):
+        """When Locate returns multiple matches, all FQNs are included (spec §4.4.1)."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+        backend.locate.return_value = [
+            "Coq.Init.Nat.add",
+            "Coq.ZArith.BinInt.Z.add",
+        ]
+
+        resolved = resolve_symbols({"+"}, backend)
+
+        assert "Coq.Init.Nat.add" in resolved
+        assert "Coq.ZArith.BinInt.Z.add" in resolved
+
+    def test_empty_input_returns_empty(self):
+        """Empty symbol set produces empty result."""
+        from Poule.extraction.pipeline import resolve_symbols
+
+        backend = _make_mock_backend()
+
+        resolved = resolve_symbols(set(), backend)
+
+        assert resolved == set()
+
+
+class TestSymbolFreqUsesFQNs:
+    """After extraction with symbol resolution, symbol_freq contains FQNs (spec §4.4.1 invariant)."""
+
+    def test_symbol_freq_keys_are_fqns(self):
+        """Post-processing computes symbol frequencies using FQN-resolved symbol sets."""
+        from Poule.extraction.pipeline import run_extraction
+
+        backend = _make_mock_backend(
+            declarations=[
+                ("A.decl1", "Lemma", {"type_signature": "nat -> nat", "source": "coq-lsp"}),
+            ]
+        )
+        writer = _make_mock_writer()
+        writer.batch_insert.return_value = {"A.decl1": 1}
+
+        mock_r1 = Mock()
+        mock_r1.name = "A.decl1"
+        mock_r1.symbol_set = ["Coq.Init.Datatypes.nat"]  # FQN
+        mock_r1.dependency_names = []
+
+        with (
+            patch(
+                "Poule.extraction.pipeline.discover_libraries",
+                return_value=[Path("/fake/A.vo")],
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_backend",
+                return_value=backend,
+            ),
+            patch(
+                "Poule.extraction.pipeline.create_writer",
+                return_value=writer,
+            ),
+            patch(
+                "Poule.extraction.pipeline.process_declaration",
+                return_value=mock_r1,
+            ),
+        ):
+            run_extraction(targets=["stdlib"], db_path=Path("/tmp/test.db"))
+
+        writer.insert_symbol_freq.assert_called_once()
+        freq_dict = writer.insert_symbol_freq.call_args[0][0]
+        # The key should be a FQN, not a short name
+        assert "Coq.Init.Datatypes.nat" in freq_dict

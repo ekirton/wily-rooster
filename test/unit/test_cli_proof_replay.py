@@ -383,18 +383,3 @@ class TestReplayProofErrors:
              patch("Poule.cli.commands.SessionManager", return_value=mgr):
             runner.invoke(cli, ["replay-proof", "missing.v", "add_comm"])
         mgr.close_session.assert_not_called()
-
-
-# ===========================================================================
-# 4. Contract test placeholder — requires real Coq backend
-# ===========================================================================
-
-
-@pytest.mark.requires_coq
-def test_replay_proof_contract_with_real_backend():
-    """Contract test: verify replay-proof works with a real Coq backend.
-
-    This test exercises the same SessionManager interface that the mocked
-    tests above verify, ensuring mock/real parity per test/CLAUDE.md.
-    """
-    pytest.skip("Requires Coq backend — run with --run-coq flag")

@@ -1,4 +1,4 @@
-"""Tests for extended library discovery (specification/extraction.md §4.8).
+"""Unit tests for extended library discovery (specification/extraction.md §4.8).
 
 Tests the 4 new library targets added to discover_libraries():
 stdpp, flocq, coquelicot, coqinterval.
@@ -6,7 +6,6 @@ stdpp, flocq, coquelicot, coqinterval.
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -138,57 +137,3 @@ class TestDiscoverLibrariesExtended:
             )
             with pytest.raises(ExtractionError):
                 discover_libraries("stdpp")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Contract tests — require real Coq installation
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-@pytest.mark.requires_coq
-class TestDiscoverLibrariesExtendedContract:
-    """Contract tests verifying real library discovery against installed Coq."""
-
-    def test_stdpp_real_discovery(self):
-        """Contract: discover_libraries("stdpp") works with real coqc -where."""
-        from Poule.extraction.pipeline import discover_libraries
-
-        try:
-            result = discover_libraries("stdpp")
-            assert all(str(p).endswith(".vo") for p in result)
-            assert len(result) > 0
-        except Exception:
-            pytest.skip("stdpp not installed")
-
-    def test_flocq_real_discovery(self):
-        """Contract: discover_libraries("flocq") works with real coqc -where."""
-        from Poule.extraction.pipeline import discover_libraries
-
-        try:
-            result = discover_libraries("flocq")
-            assert all(str(p).endswith(".vo") for p in result)
-            assert len(result) > 0
-        except Exception:
-            pytest.skip("flocq not installed")
-
-    def test_coquelicot_real_discovery(self):
-        """Contract: discover_libraries("coquelicot") works with real coqc -where."""
-        from Poule.extraction.pipeline import discover_libraries
-
-        try:
-            result = discover_libraries("coquelicot")
-            assert all(str(p).endswith(".vo") for p in result)
-            assert len(result) > 0
-        except Exception:
-            pytest.skip("coquelicot not installed")
-
-    def test_coqinterval_real_discovery(self):
-        """Contract: discover_libraries("coqinterval") works with real coqc -where."""
-        from Poule.extraction.pipeline import discover_libraries
-
-        try:
-            result = discover_libraries("coqinterval")
-            assert all(str(p).endswith(".vo") for p in result)
-            assert len(result) > 0
-        except Exception:
-            pytest.skip("coqinterval not installed")

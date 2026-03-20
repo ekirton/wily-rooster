@@ -78,6 +78,17 @@ def _mock_parser():
     return parser
 
 
+def _build_suffix_index(inverted_index):
+    """Build a suffix index from inverted index keys (matches spec §4.1)."""
+    suffix_index: dict[str, list[str]] = {}
+    for fqn in inverted_index:
+        parts = fqn.split(".")
+        for k in range(1, len(parts)):
+            suffix = ".".join(parts[k:])
+            suffix_index.setdefault(suffix, []).append(fqn)
+    return suffix_index
+
+
 def _mock_context(parser=None):
     """Return a PipelineContext-like mock with all expected fields."""
     ctx = MagicMock(spec=PipelineContext)
@@ -92,6 +103,7 @@ def _mock_context(parser=None):
         2: {"Coq.Init.Nat.add", "Coq.Init.Datatypes.nat"},
         3: {"Coq.Init.Datatypes.nat", "Coq.Init.Logic.eq"},
     }
+    ctx.suffix_index = _build_suffix_index(ctx.inverted_index)
     ctx.parser = parser
     return ctx
 
@@ -140,6 +152,53 @@ class TestCreateContext:
         ctx = create_context("/tmp/test.db")
 
         assert ctx.declaration_node_counts == {1: 10, 2: 20, 3: 60}
+
+    @patch("Poule.pipeline.context.IndexReader")
+    def test_suffix_index_built_from_inverted_index_keys(self, MockIndexReader):
+        """create_context builds a suffix_index mapping suffixes to FQNs (spec §4.1)."""
+        reader = _mock_reader()
+        MockIndexReader.return_value = reader
+
+        ctx = create_context("/tmp/test.db")
+
+        assert hasattr(ctx, "suffix_index")
+        assert isinstance(ctx.suffix_index, dict)
+        # "Nat.add" is a suffix of "Coq.Init.Nat.add"
+        assert "Nat.add" in ctx.suffix_index
+        assert "Coq.Init.Nat.add" in ctx.suffix_index["Nat.add"]
+        # "Init.Datatypes.nat" is a suffix of "Coq.Init.Datatypes.nat"
+        assert "Init.Datatypes.nat" in ctx.suffix_index
+        assert "Coq.Init.Datatypes.nat" in ctx.suffix_index["Init.Datatypes.nat"]
+
+    @patch("Poule.pipeline.context.IndexReader")
+    def test_suffix_index_contains_all_proper_suffixes(self, MockIndexReader):
+        """Each FQN contributes all proper dot-separated suffixes (spec §4.1)."""
+        reader = _mock_reader()
+        MockIndexReader.return_value = reader
+
+        ctx = create_context("/tmp/test.db")
+
+        # "Coq.Init.Nat.add" should produce: "Init.Nat.add", "Nat.add", "add"
+        for suffix in ["Init.Nat.add", "Nat.add", "add"]:
+            assert suffix in ctx.suffix_index, f"Missing suffix: {suffix}"
+            assert "Coq.Init.Nat.add" in ctx.suffix_index[suffix]
+
+    @patch("Poule.pipeline.context.IndexReader")
+    def test_suffix_index_ambiguous_suffixes_retain_all_fqns(self, MockIndexReader):
+        """Ambiguous suffixes (matching multiple FQNs) retain all matches (spec §4.1)."""
+        reader = _mock_reader()
+        # Add a second FQN that shares the suffix "eq" with "Coq.Init.Logic.eq"
+        inv_idx = reader.load_inverted_index.return_value
+        inv_idx["Coq.Arith.PeanoNat.Nat.eq"] = {4}
+        MockIndexReader.return_value = reader
+
+        ctx = create_context("/tmp/test.db")
+
+        # "eq" is a suffix of both FQNs
+        assert "eq" in ctx.suffix_index
+        fqns = ctx.suffix_index["eq"]
+        assert "Coq.Init.Logic.eq" in fqns
+        assert "Coq.Arith.PeanoNat.Nat.eq" in fqns
 
 
 # ---------------------------------------------------------------------------
@@ -210,12 +269,86 @@ class TestSearchByName:
 
 
 # ---------------------------------------------------------------------------
-# 4. search_by_symbols: calls mepo_select, returns top-limit results
+# 4. search_by_symbols: resolves names, calls mepo_select, returns top-limit
 # ---------------------------------------------------------------------------
 
 
+class TestResolveQuerySymbols:
+    """resolve_query_symbols resolves short/partial names to FQNs via suffix index (spec §4.5.1)."""
+
+    def test_exact_fqn_used_directly(self):
+        """A symbol that is an exact key in the inverted index passes through unchanged."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+
+        resolved = resolve_query_symbols(ctx, ["Coq.Init.Nat.add"])
+
+        assert "Coq.Init.Nat.add" in resolved
+
+    def test_short_name_resolved_via_suffix_index(self):
+        """A short name like 'Nat.add' is resolved to its FQN via suffix match."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+
+        resolved = resolve_query_symbols(ctx, ["Nat.add"])
+
+        assert "Coq.Init.Nat.add" in resolved
+
+    def test_partial_qualification_resolved(self):
+        """A partial qualification like 'Init.Nat.add' is resolved via suffix match."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+
+        resolved = resolve_query_symbols(ctx, ["Init.Nat.add"])
+
+        assert "Coq.Init.Nat.add" in resolved
+
+    def test_ambiguous_suffix_expands_to_all_fqns(self):
+        """An ambiguous short name expands to all matching FQNs (spec §4.5.1)."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+        # "nat" is a suffix of "Coq.Init.Datatypes.nat"; add a second FQN
+        ctx.suffix_index["nat"] = [
+            "Coq.Init.Datatypes.nat",
+            "Coq.ZArith.BinInt.Z.nat",
+        ]
+
+        resolved = resolve_query_symbols(ctx, ["nat"])
+
+        assert "Coq.Init.Datatypes.nat" in resolved
+        assert "Coq.ZArith.BinInt.Z.nat" in resolved
+
+    def test_unknown_symbol_passed_through(self):
+        """A symbol matching neither the inverted index nor suffix index is included as-is."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+
+        resolved = resolve_query_symbols(ctx, ["my_custom_def"])
+
+        assert "my_custom_def" in resolved
+
+    def test_mixed_symbols_resolved(self):
+        """A mix of FQN, short, and unknown symbols are all resolved correctly."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context()
+
+        resolved = resolve_query_symbols(
+            ctx, ["Coq.Init.Nat.add", "Nat.add", "Logic.eq", "unknown"]
+        )
+
+        assert "Coq.Init.Nat.add" in resolved
+        assert "Coq.Init.Logic.eq" in resolved
+        assert "unknown" in resolved
+
+
 class TestSearchBySymbols:
-    """search_by_symbols delegates to mepo_select and respects limit."""
+    """search_by_symbols resolves names then delegates to mepo_select."""
 
     @patch("Poule.pipeline.search.mepo_select")
     def test_calls_mepo_select_with_correct_args(self, mock_mepo):
@@ -235,6 +368,22 @@ class TestSearchBySymbols:
             call_args[1].get("symbols", call_args[0][0])
         ) == set(symbols)
         assert len(results) == 2
+
+    @patch("Poule.pipeline.search.mepo_select")
+    def test_short_names_resolved_before_mepo(self, mock_mepo):
+        """Short names like 'Nat.add' are resolved to FQNs before passing to mepo_select (spec §4.5)."""
+        ctx = _mock_context()
+        mock_mepo.return_value = [
+            _mock_search_result(1, 0.8),
+        ]
+
+        results = search_by_symbols(ctx, ["Nat.add", "Nat.mul"], limit=10)
+
+        mock_mepo.assert_called_once()
+        call_args = mock_mepo.call_args
+        resolved_set = call_args[0][0]
+        # "Nat.add" should have been resolved to "Coq.Init.Nat.add"
+        assert "Coq.Init.Nat.add" in resolved_set
 
     @patch("Poule.pipeline.search.mepo_select")
     def test_limits_results(self, mock_mepo):
@@ -1304,66 +1453,7 @@ class TestCoqLspParserUnit:
 
 
 # ---------------------------------------------------------------------------
-# 17. CoqLspParser contract tests (real coq-lsp)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.requires_coq
-class TestCoqLspParserContract:
-    """Contract tests exercising real coq-lsp.
-
-    These tests require coq-lsp to be installed and on PATH.
-    Run with: pytest -m requires_coq
-
-    coq-lsp returns text output (not structured Constr.t JSON) for
-    ``Check`` commands via ``proof/goals``, so ``parse()`` raises
-    ``ParseError`` for valid Coq expressions.  These tests verify the
-    actual coq-lsp behavior.
-    """
-
-    def test_parse_valid_expression_raises_parse_error(self):
-        """parse("nat") raises ParseError because coq-lsp returns text,
-        not structured JSON (spec §4.2: on failure raises ParseError)."""
-        parser = CoqLspParser()
-        try:
-            with pytest.raises(ParseError):
-                parser.parse("nat")
-        finally:
-            parser.close()
-
-    def test_parse_invalid_expression_raises(self):
-        """Parse 'not_a_valid_coq_thing!!!' and verify ParseError."""
-        parser = CoqLspParser()
-        try:
-            with pytest.raises(ParseError):
-                parser.parse("not_a_valid_coq_thing!!!")
-        finally:
-            parser.close()
-
-    def test_close_terminates_process(self):
-        """Verify close() terminates the coq-lsp subprocess."""
-        parser = CoqLspParser()
-        # Trigger _ensure_started by attempting a parse (will raise ParseError
-        # because coq-lsp returns text, not structured JSON — catch it)
-        try:
-            parser.parse("nat")
-        except ParseError:
-            pass
-
-        # Process should be running
-        assert parser._proc is not None
-        proc = parser._proc
-
-        parser.close()
-
-        # After close, internal ref should be None
-        assert parser._proc is None
-        # The real process should have terminated
-        assert proc.poll() is not None
-
-
-# ---------------------------------------------------------------------------
-# 18. TED tree-size boundary (spec §4.7, condition: both ≤ 50)
+# 17. TED tree-size boundary (spec §4.7, condition: both ≤ 50)
 # ---------------------------------------------------------------------------
 
 

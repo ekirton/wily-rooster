@@ -335,16 +335,6 @@ class TestTacticLookup:
         assert result.body is None
         assert result.kind in ("primitive", "ltac2")
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_coq_query_print_ltac(self):
-        """Contract test: real coq_query returns parseable output for Print Ltac."""
-        # Requires a live Coq instance; skipped unless @requires_coq is enabled.
-        from Poule.tactics.lookup import tactic_lookup
-        result = await tactic_lookup("auto")
-        assert result.name == "auto"
-        assert result.kind in ("ltac", "primitive", "ltac2")
-
 
 # ===========================================================================
 # 2. Strategy Inspection -- section 4.2
@@ -424,16 +414,6 @@ class TestStrategyInspection:
             args = call_args[0] if call_args[0] else ()
             if args:
                 assert args[0] == "Print"
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_coq_query_print_strategy(self):
-        """Contract test: real coq_query for Print Strategy."""
-        from Poule.tactics.lookup import strategy_inspect
-        result = await strategy_inspect("Nat.add")
-        assert len(result) >= 1
-        assert result[0].constant == "Nat.add"
-        assert result[0].level in ("transparent", "opaque") or isinstance(result[0].level, int)
 
 
 # ===========================================================================
@@ -587,14 +567,6 @@ class TestTacticComparison:
             args = call_args[0] if call_args[0] else ()
             if args:
                 assert args[0] == "Print"
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_tactic_compare_real(self):
-        """Contract test: real tactic_compare with live Coq."""
-        from Poule.tactics.compare import tactic_compare
-        result = await tactic_compare(["auto", "eauto"])
-        assert len(result.tactics) == 2
 
 
 # ===========================================================================
@@ -897,22 +869,6 @@ class TestContextualSuggestion:
         # observe_proof_state is read-only; verify it was called
         observe.assert_called_once_with("s1")
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_observe_proof_state(self, coq_test_file):
-        """Contract test: real observe_proof_state returns a ProofState."""
-        from Poule.session.types import ProofState
-        from Poule.session.manager import ProofSessionManager
-        manager = ProofSessionManager()
-        session_id, _ = await manager.create_session(
-            str(coq_test_file), "test_proof",
-        )
-        try:
-            state = await manager.observe_state(session_id)
-            assert isinstance(state, ProofState)
-        finally:
-            await manager.close_session(session_id)
-
 
 # ===========================================================================
 # 5. Hint Database Inspection -- section 4.5
@@ -1093,15 +1049,6 @@ class TestHintDatabaseInspection:
             args = call_args[0] if call_args[0] else ()
             if args:
                 assert args[0] == "Print"
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_coq_query_print_hintdb(self):
-        """Contract test: real coq_query for Print HintDb."""
-        from Poule.tactics.hints import hint_inspect
-        result = await hint_inspect("core")
-        assert result.name == "core"
-        assert result.total_entries >= 0
 
 
 # ===========================================================================

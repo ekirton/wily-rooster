@@ -17,7 +17,7 @@ import asyncio
 import os
 import textwrap
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -193,13 +193,6 @@ class TestAvailabilityDetection:
         # Only one subprocess spawn
         assert mock_exec.call_count == 1
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_check_availability_real(self):
-        """Contract test: real check_availability against system Alectryon."""
-        check_availability, _, _, _ = _import_adapter()
-        result = await check_availability(_bypass_cache=True)
-        assert result in ("available", "not_installed", "version_too_old")
 
 
 # ===========================================================================
@@ -511,29 +504,6 @@ class TestSingleFileGeneration:
         if "env" in kwargs:
             assert kwargs["env"] is None or kwargs["env"] == os.environ
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_generate_documentation_real(self):
-        """Contract test: real generate_documentation against Alectryon."""
-        _, generate_documentation, _, _ = _import_adapter()
-        DocumentationResult = _import_types()[1]
-
-        # Requires a real .v file on disk
-        request = _make_documentation_request(
-            input_file="/tmp/poule_test_contract.v",
-            format="html",
-            output_path=None,
-        )
-        # Write minimal Coq file
-        Path("/tmp/poule_test_contract.v").write_text(
-            "Lemma trivial : True. Proof. exact I. Qed.\n"
-        )
-        try:
-            result = await generate_documentation(request)
-            assert isinstance(result, DocumentationResult)
-            assert result.status in ("success", "failure")
-        finally:
-            Path("/tmp/poule_test_contract.v").unlink(missing_ok=True)
 
 
 # ===========================================================================
@@ -831,28 +801,6 @@ class TestProofScopedGeneration:
             assert result.status == "success", \
                 f"Failed to recognize declaration keyword: {keyword}"
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_generate_proof_documentation_real(self):
-        """Contract test: real proof-scoped generation against Alectryon."""
-        _, _, generate_proof_documentation, _ = _import_adapter()
-        DocumentationResult = _import_types()[1]
-
-        coq_source = "Lemma trivial : True.\nProof. exact I. Qed.\n"
-        Path("/tmp/poule_test_proof_contract.v").write_text(coq_source)
-
-        request = _make_documentation_request(
-            input_file="/tmp/poule_test_proof_contract.v",
-            proof_name="trivial",
-            format="html",
-            output_path=None,
-        )
-        try:
-            result = await generate_proof_documentation(request)
-            assert isinstance(result, DocumentationResult)
-            assert result.status in ("success", "failure")
-        finally:
-            Path("/tmp/poule_test_proof_contract.v").unlink(missing_ok=True)
 
 
 # ===========================================================================
@@ -1091,25 +1039,6 @@ class TestBatchGeneration:
             if outcome.output_file is not None:
                 assert Path(outcome.output_file).is_absolute()
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_generate_batch_documentation_real(self):
-        """Contract test: real batch generation against Alectryon."""
-        _, _, _, generate_batch_documentation = _import_adapter()
-        BatchDocumentationResult = _import_types()[3]
-
-        import tempfile
-        with tempfile.TemporaryDirectory() as src_dir, \
-             tempfile.TemporaryDirectory() as out_dir:
-            Path(src_dir, "test.v").write_text(
-                "Lemma trivial : True. Proof. exact I. Qed.\n"
-            )
-            request = _make_batch_request(
-                source_directory=src_dir,
-                output_directory=out_dir,
-            )
-            result = await generate_batch_documentation(request)
-            assert isinstance(result, BatchDocumentationResult)
 
 
 # ===========================================================================

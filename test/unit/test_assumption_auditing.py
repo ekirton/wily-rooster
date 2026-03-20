@@ -1,4 +1,4 @@
-"""TDD tests for the Assumption Auditing Engine (specification/assumption-auditing.md).
+"""Unit tests for the Assumption Auditing Engine (specification/assumption-auditing.md).
 
 Tests are written BEFORE implementation. They will fail with ImportError
 until src/poule/auditing/ modules exist.
@@ -19,7 +19,6 @@ Import paths under test:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1171,98 +1170,3 @@ class TestErrorSpecification:
         assert err.message == "Theorem name must be non-empty."
 
 
-# ===========================================================================
-# 10. Contract Tests -- require real Coq backend
-# ===========================================================================
-
-class TestContractSessionManager:
-    """Contract tests verifying mocked session manager behavior against real Coq.
-
-    These tests exercise the real Proof Session Manager to confirm
-    that the mock return values in this file match reality.
-    """
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_print_assumptions_closed_theorem(self):
-        """Verify 'Closed under the global context' output for a closed theorem."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.open_session("test_contract")
-        try:
-            await manager.send_command(
-                session_id, "From Coq Require Import PeanoNat."
-            )
-            output = await manager.send_command(
-                session_id, "Print Assumptions Nat.add_0_r."
-            )
-            assert "Closed under the global context" in output
-        finally:
-            await manager.close_session(session_id)
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_print_assumptions_classical_theorem(self):
-        """Verify that classic appears in output for a classical theorem."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.open_session("test_contract")
-        try:
-            # Load Classical and define a simple theorem
-            await manager.send_command(session_id, "Require Import Coq.Logic.Classical_Prop.")
-            await manager.send_command(
-                session_id,
-                "Theorem test_em : forall P : Prop, P \\/ ~ P. Proof. apply classic. Qed.",
-            )
-            output = await manager.send_command(session_id, "Print Assumptions test_em.")
-            assert "classic" in output
-            assert " : " in output
-        finally:
-            await manager.close_session(session_id)
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_query_declaration_kind_axiom(self):
-        """Verify that querying kind of an axiom returns 'Axiom' or 'Parameter'."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.open_session("test_contract")
-        try:
-            await manager.send_command(session_id, "Require Import Coq.Logic.Classical_Prop.")
-            kind = await manager.query_declaration_kind(
-                session_id, "Coq.Logic.Classical_Prop.classic",
-            )
-            assert kind in ("Axiom", "Parameter")
-        finally:
-            await manager.close_session(session_id)
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_query_declaration_kind_opaque(self):
-        """Verify that querying kind of a Qed lemma returns opaque indicator."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.open_session("test_contract")
-        try:
-            await manager.send_command(
-                session_id,
-                "Lemma trivial_lemma : True. Proof. exact I. Qed.",
-            )
-            kind = await manager.query_declaration_kind(session_id, "trivial_lemma")
-            assert kind == "Opaque"
-        finally:
-            await manager.close_session(session_id)
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_print_module_lists_declarations(self):
-        """Verify Print Module output contains theorem names."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.open_session("test_contract")
-        try:
-            output = await manager.send_command(session_id, "Print Module Coq.Init.Nat.")
-            # Should contain at least some declaration keywords
-            assert "Theorem" in output or "Lemma" in output or "Definition" in output or "Fixpoint" in output
-        finally:
-            await manager.close_session(session_id)

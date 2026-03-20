@@ -1635,122 +1635,6 @@ class TestProtocolConformance:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@pytest.mark.requires_coq
-class TestContractListDeclarations:
-    """Contract: real coq-lsp returns valid declarations for a .vo file.
-
-    Verifies that the mock assumptions in TestListDeclarations hold against
-    a real coq-lsp installation.  The spec (§4.1) requires list_declarations
-    to return (name, kind, constr_t) tuples for ALL declarations in a module.
-    """
-
-    def test_real_backend_list_declarations(self):
-        import subprocess
-
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
-
-        # Find a stdlib .vo file known to contain declarations.
-        # Rocq 9.x moved stdlib from theories/ to user-contrib/Stdlib/.
-        result = subprocess.run(
-            ["coqc", "-where"], capture_output=True, text=True
-        )
-        coq_root = Path(result.stdout.strip())
-
-        # Use Nat.vo — a module guaranteed to have many Gallina declarations.
-        # Avoid arbitrary glob picks like Tactics.vo which only defines Ltac.
-        # Try Rocq 9.x location first, then legacy theories/
-        vo_file = None
-        for init_dir in [
-            coq_root / "user-contrib" / "Stdlib" / "Init",
-            coq_root / "theories" / "Init",
-        ]:
-            candidate = init_dir / "Nat.vo"
-            if candidate.exists():
-                vo_file = candidate
-                break
-        if vo_file is None:
-            pytest.skip("Nat.vo not found in Coq/Rocq stdlib")
-
-        with CoqLspBackend() as backend:
-            decls = backend.list_declarations(vo_file)
-
-        assert isinstance(decls, list)
-        # The Init/ directory contains non-trivial modules (Nat, Logic, etc.)
-        # that define dozens of declarations.  An empty list means the backend
-        # failed to extract them — exactly the bug we are catching.
-        assert len(decls) > 0, (
-            f"list_declarations returned 0 declarations for {vo_file.name}; "
-            "expected non-empty for a known stdlib module"
-        )
-        assert all(len(d) == 3 for d in decls)
-        assert all(isinstance(d[0], str) for d in decls)
-        assert all(isinstance(d[1], str) for d in decls)
-
-
-@pytest.mark.requires_coq
-class TestContractDetectVersion:
-    """Contract: real coq-lsp returns a version string."""
-
-    def test_real_backend_detect_version(self):
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
-
-        with CoqLspBackend() as backend:
-            version = backend.detect_version()
-
-        assert isinstance(version, str)
-        assert len(version) > 0
-
-
-@pytest.mark.requires_coq
-class TestContractPrettyPrint:
-    """Contract: real coq-lsp pretty-prints a known declaration.
-
-    Verifies that pretty_print returns the actual definition body, not just
-    any non-empty string (e.g. a deprecation warning).
-    """
-
-    def test_real_backend_pretty_print(self):
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
-
-        # Use the short name 'Nat.add' which works in both Coq 8.x and Rocq 9.x.
-        # 'Coq.Init.Nat.add' produces only a deprecation warning in Rocq 9.x,
-        # not the actual definition — that was masking the real failure.
-        with CoqLspBackend() as backend:
-            result = backend.pretty_print("Nat.add")
-
-        assert isinstance(result, str)
-        assert len(result) > 0, (
-            "pretty_print returned empty string for Nat.add; "
-            "expected the definition body"
-        )
-        # The Print output for Nat.add must contain its definition structure
-        # (e.g. 'fix', 'match', 'nat', or 'Nat.add =').
-        assert any(
-            keyword in result
-            for keyword in ("fix", "match", "nat", "Nat.add", "add")
-        ), (
-            f"pretty_print output does not look like the Nat.add definition: "
-            f"{result!r}"
-        )
-
-
-@pytest.mark.requires_coq
-class TestContractGetDependencies:
-    """Contract: real coq-lsp returns dependencies for a known declaration."""
-
-    def test_real_backend_get_dependencies(self):
-        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
-
-        # Use short name for Rocq 9.x compatibility
-        with CoqLspBackend() as backend:
-            deps = backend.get_dependencies("Nat.add")
-
-        assert isinstance(deps, list)
-        assert all(
-            isinstance(d, tuple) and len(d) == 2 for d in deps
-        )
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # 16. Batched Vernac Queries (_run_vernac_batch)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2128,36 +2012,159 @@ class TestParseAboutKind:
         assert CoqLspBackend._parse_about_kind("some_notation", msgs) == "notation"
 
 
-@pytest.mark.requires_coq
-class TestContractQueryDeclarationData:
-    """Contract: real coq-lsp returns statement and dependencies for declarations."""
+# ===========================================================================
+# locate() — unit tests (spec §4.1)
+# ===========================================================================
 
-    def test_real_backend_query_declaration_data(self):
+
+class TestLocate:
+    """locate(name) issues a Locate Vernac query and parses the response."""
+
+    def test_locate_constant_returns_fqn(self):
+        """Locate 'nat' returns the FQN of the Constant/Inductive."""
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
-        with CoqLspBackend() as backend:
-            result = backend.query_declaration_data(["Nat.add", "Nat.mul"])
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
 
-        assert "Nat.add" in result
-        assert "Nat.mul" in result
-        stmt_add, deps_add = result["Nat.add"]
-        assert isinstance(stmt_add, str)
-        assert len(stmt_add) > 0
-        assert isinstance(deps_add, list)
+        # Mock _run_vernac_query to return a Locate response
+        def fake_query(text, query_line=0):
+            return ([], [{"text": "Inductive Coq.Init.Datatypes.nat", "level": 3}])
 
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
 
-@pytest.mark.requires_coq
-class TestContractRunVernacBatch:
-    """Contract: real coq-lsp returns per-line messages for batched commands."""
+        result = backend.locate("nat")
 
-    def test_real_backend_run_vernac_batch(self):
+        assert result == "Coq.Init.Datatypes.nat"
+
+    def test_locate_infix_operator(self):
+        """Locate '+' returns the FQN of the underlying constant."""
         from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
 
-        with CoqLspBackend() as backend:
-            results = backend._run_vernac_batch([
-                "About Nat.add.",
-                "About Nat.mul.",
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([], [{"text": "Constant Coq.Init.Nat.add", "level": 3}])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("+")
+
+        assert result == "Coq.Init.Nat.add"
+
+    def test_locate_not_found_returns_none(self):
+        """Locate for unknown name returns None."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([{"severity": 1}], [])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("nonexistent_thing")
+
+        assert result is None
+
+    def test_locate_notation_without_body_returns_none(self):
+        """Notation-only Locate results with no parseable body return None."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([], [{"text": "Notation Coq.Init.Peano.pred", "level": 3}])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("pred")
+
+        assert result is None
+
+    def test_locate_notation_with_body_extracts_fqn(self):
+        """Notation with a qualified head symbol extracts the FQN."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([], [{"text": 'Notation "x + y" := (Nat.add x y)', "level": 3}])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("+")
+
+        assert result == "Nat.add"
+
+    def test_locate_ambiguous_returns_list(self):
+        """Locate with multiple Constant/Inductive matches returns a list of FQNs."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([], [
+                {"text": "Constant Coq.Init.Nat.add", "level": 3},
+                {"text": "Constant Coq.ZArith.BinInt.Z.add", "level": 3},
             ])
 
-        assert len(results) == 2
-        assert all(isinstance(r, list) for r in results)
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("+")
+
+        assert isinstance(result, list)
+        assert "Coq.Init.Nat.add" in result
+        assert "Coq.ZArith.BinInt.Z.add" in result
+
+    def test_locate_mixed_notation_and_constant(self):
+        """When Locate returns both Notation and Constant, only Constant FQNs are kept."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+
+        def fake_query(text, query_line=0):
+            return ([], [
+                {"text": "Notation Coq.Init.Peano.plus", "level": 3},
+                {"text": "Constant Coq.Init.Nat.add", "level": 3},
+            ])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        result = backend.locate("+")
+
+        assert result == "Coq.Init.Nat.add"
+
+    def test_locate_uses_quoted_form_for_operators(self):
+        """Infix operators should be queried as Locate \"+\". not Locate +."""
+        from Poule.extraction.backends.coqlsp_backend import CoqLspBackend
+
+        backend = CoqLspBackend.__new__(CoqLspBackend)
+        backend._proc = None
+        queries_issued = []
+
+        def fake_query(text, query_line=0):
+            queries_issued.append(text)
+            return ([], [{"text": "Constant Coq.Init.Nat.add", "level": 3}])
+
+        backend._run_vernac_query = fake_query
+        backend._ensure_alive = lambda: None
+
+        backend.locate("+")
+
+        assert len(queries_issued) == 1
+        assert 'Locate "+".' in queries_issued[0]
+

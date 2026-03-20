@@ -16,7 +16,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["test"]
+testpaths = ["test/unit", "test/integration"]
 asyncio_mode = "auto"
 markers = [
     "requires_coq: test requires a real Coq/coq-lsp installation",

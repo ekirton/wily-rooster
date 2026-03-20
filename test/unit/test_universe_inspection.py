@@ -511,24 +511,6 @@ class TestFullGraphRetrieval:
             await retrieve_full_graph(manager, "nonexistent")
         assert exc_info.value.code == SESSION_NOT_FOUND
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_retrieve_full_graph(self, coq_test_file):
-        """Contract test: real coq_query returns text that parses into a ConstraintGraph."""
-        retrieve_full_graph, _ = _import_retrieval()
-        # This test exercises the real Coq backend.
-        # Skipped when Coq is not available.
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            result = await retrieve_full_graph(manager, session_id)
-            assert hasattr(result, "variables")
-            assert hasattr(result, "constraints")
-            assert result.node_count == len(result.variables)
-        finally:
-            await manager.close_session(session_id)
-
 
 # ===========================================================================
 # 6. Per-Definition Constraint Retrieval — §4.2
@@ -606,23 +588,6 @@ class TestDefinitionConstraintRetrieval:
         assert "INVALID_INPUT" in str(exc_info.value) or (
             hasattr(exc_info.value, "code") and exc_info.value.code == "INVALID_INPUT"
         )
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_retrieve_definition_constraints(self, coq_test_file):
-        """Contract test: real per-definition retrieval returns a ConstraintGraph."""
-        _, retrieve_definition_constraints = _import_retrieval()
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            result = await retrieve_definition_constraints(
-                manager, session_id, "nat",
-            )
-            assert hasattr(result, "filtered_from")
-            assert result.filtered_from == "nat"
-        finally:
-            await manager.close_session(session_id)
 
 
 # ===========================================================================
@@ -740,26 +705,6 @@ class TestInconsistencyDiagnosis:
         assert result.cycle == []
         assert len(result.explanation) > 0
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_diagnose_universe_error(self, coq_test_file):
-        """Contract test: real diagnosis against a Coq backend."""
-        diagnose = _import_diagnosis()
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            error_msg = (
-                "Universe inconsistency: cannot enforce u.1 < u.2 "
-                "because u.2 <= u.1 is already required"
-            )
-            result = await diagnose(manager, session_id, error_msg, {})
-            assert hasattr(result, "cycle")
-            assert hasattr(result, "explanation")
-            assert hasattr(result, "suggestions")
-        finally:
-            await manager.close_session(session_id)
-
 
 # ===========================================================================
 # 8. Cycle Detection — §4.7
@@ -871,25 +816,6 @@ class TestSourceAttribution:
             assert isinstance(attr, ConstraintAttribution)
             assert attr.confidence in ("certain", "inferred", "unknown")
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_attribution_uses_about_command(self, coq_test_file):
-        """Contract test: real attribution queries About for definitions."""
-        diagnose = _import_diagnosis()
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            error_msg = (
-                "Universe inconsistency: cannot enforce u.1 < u.2 "
-                "because u.2 <= u.1 is already required"
-            )
-            result = await diagnose(manager, session_id, error_msg, {})
-            for attr in result.attributions:
-                assert attr.confidence in ("certain", "inferred", "unknown")
-        finally:
-            await manager.close_session(session_id)
-
 
 # ===========================================================================
 # 10. Resolution Suggestions — §4.9
@@ -990,20 +916,6 @@ class TestPolymorphicInstantiationRetrieval:
             hasattr(exc_info.value, "code") and exc_info.value.code == "INVALID_INPUT"
         )
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_retrieve_instantiations(self, coq_test_file):
-        """Contract test: real instantiation retrieval returns structured data."""
-        retrieve_instantiations, _ = _import_polymorphic()
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            result = await retrieve_instantiations(manager, session_id, "list")
-            assert isinstance(result, list)
-        finally:
-            await manager.close_session(session_id)
-
 
 # ===========================================================================
 # 12. Polymorphic Compatibility Comparison — §4.11
@@ -1065,20 +977,6 @@ class TestPolymorphicCompatibilityComparison:
         # The result should contain information about the cycle
         if hasattr(result, "conflicting_constraints"):
             assert len(result.conflicting_constraints) > 0
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_compare_definitions(self, coq_test_file):
-        """Contract test: real comparison against a Coq backend."""
-        _, compare_definitions = _import_polymorphic()
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            result = await compare_definitions(manager, session_id, "nat", "bool")
-            assert result is not None
-        finally:
-            await manager.close_session(session_id)
 
 
 # ===========================================================================
@@ -1238,18 +1136,6 @@ class TestInterfaceContracts:
         for cmd in state_modifying:
             assert not any(cmd in c for c in calls)
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_coq_query_returns_text(self, coq_test_file):
-        """Contract test: coq_query returns raw text for Print Universes."""
-        from Poule.session.manager import SessionManager
-        manager = SessionManager()
-        session_id = await manager.create_session(str(coq_test_file), "test_proof")
-        try:
-            raw = await manager.coq_query(session_id, "Print Universes.")
-            assert isinstance(raw, str)
-        finally:
-            await manager.close_session(session_id)
 
 
 # ===========================================================================

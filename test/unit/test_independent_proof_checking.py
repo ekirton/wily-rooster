@@ -375,15 +375,6 @@ class TestLocateCoqchk:
         assert isinstance(result, str)
         assert os.path.isabs(result)
 
-    @pytest.mark.requires_coq
-    def test_contract_locate_coqchk_real(self):
-        """Contract test: locate_coqchk with real shutil.which."""
-        locate_coqchk = _import_locate()
-        result = locate_coqchk()
-        # On a system with coqchk: returns a string path
-        # On a system without: returns a CheckResult with error
-        _, CheckResult, _ = _import_types()
-        assert isinstance(result, (str, CheckResult))
 
 
 # ===========================================================================
@@ -853,23 +844,6 @@ class TestCheckSingle:
 
         assert result.wall_time_ms >= 0
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_check_single_real(self, tmp_path):
-        """Contract test: check_single with real coqchk binary."""
-        check_single = _import_check_single()
-        _, CheckResult, _ = _import_types()
-        # This test requires a real .vo file and coqchk installed
-        vo_file = tmp_path / "Test.vo"
-        vo_file.touch()
-        result = await check_single(
-            file_path=str(vo_file),
-            include_paths=[],
-            load_paths=[],
-            timeout_seconds=30,
-        )
-        assert isinstance(result, CheckResult)
-        assert result.status in ("pass", "fail", "error")
 
 
 # ===========================================================================
@@ -1029,19 +1003,6 @@ class TestCheckProject:
         mock_exec.assert_not_called()
         assert result.raw_output == ""
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_check_project_real(self, tmp_path):
-        """Contract test: check_project with real coqchk binary."""
-        check_project = _import_check_project()
-        _, CheckResult, _ = _import_types()
-        result = await check_project(
-            project_dir=str(tmp_path),
-            include_paths=[],
-            load_paths=[],
-            timeout_seconds=30,
-        )
-        assert isinstance(result, CheckResult)
 
 
 # ===========================================================================
@@ -1190,15 +1151,6 @@ class TestCheckProofEntryPoint:
         assert result.wall_time_ms is not None
         assert result.raw_output is not None
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_check_proof_real(self, tmp_path):
-        """Contract test: check_proof with real coqchk binary."""
-        check_proof = _import_adapter()
-        _, CheckResult, _ = _import_types()
-        req = _make_check_request(mode="project", project_dir=str(tmp_path))
-        result = await check_proof(req)
-        assert isinstance(result, CheckResult)
 
 
 # ===========================================================================
@@ -1491,15 +1443,3 @@ class TestSpecExamples:
         assert result.files_checked == 3
         assert result.files_passed == 3
         assert str(theories / "Bar.vo") in result.stale_files
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_full_single_check(self, tmp_path):
-        """Contract test: full single-file check with real coqchk."""
-        check_proof = _import_adapter()
-        _, CheckResult, _ = _import_types()
-        vo_file = tmp_path / "Test.vo"
-        vo_file.touch()
-        req = _make_check_request(mode="single", file_path=str(vo_file))
-        result = await check_proof(req)
-        assert isinstance(result, CheckResult)

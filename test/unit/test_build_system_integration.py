@@ -834,30 +834,6 @@ class TestBuildExecution:
         _, _, _, BuildSystem, *_ = _import_types()
         assert result.build_system == BuildSystem.DUNE
 
-    # --- Contract tests for subprocess mocks ---
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_dune_build_real_subprocess(self, tmp_path):
-        """Contract: real dune build produces a BuildResult with expected fields."""
-        execute = _import_execute()
-        # Minimal dune project
-        (tmp_path / "dune-project").write_text('(lang dune 3.0)\n(using coq 0.6)\n')
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "dune").write_text('(coq.theory (name Test))\n')
-        (src / "Test.v").write_text("Lemma foo : True. Proof. exact I. Qed.\n")
-        request = _make_build_request(project_dir=str(tmp_path))
-        result = await execute(request)
-        (
-            BuildError, BuildRequest, BuildResult, BuildSystem,
-            *_rest
-        ) = _import_types()
-        assert isinstance(result, BuildResult)
-        assert isinstance(result.success, bool)
-        assert isinstance(result.exit_code, int)
-        assert isinstance(result.elapsed_ms, int)
-        assert result.elapsed_ms >= 0
 
 
 # ===========================================================================
@@ -1137,32 +1113,6 @@ class TestPackageQueries:
         # Versions should be descending
         assert result.available_versions == sorted(result.available_versions, reverse=True)
 
-    # --- Contract tests for opam subprocess mocks ---
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_query_installed_packages_real(self):
-        """Contract: real opam list returns list of (name, version) tuples."""
-        query = _import_query_installed_packages()
-        result = await query()
-        assert isinstance(result, list)
-        if result:
-            assert isinstance(result[0], tuple)
-            assert len(result[0]) == 2
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_query_package_info_real(self):
-        """Contract: real opam show returns PackageInfo for a known package."""
-        query = _import_query_package_info()
-        (
-            BuildError, BuildRequest, BuildResult, BuildSystem,
-            ConflictDetail, ConstraintSource, DependencyStatus,
-            DetectionResult, MigrationResult, OpamMetadata, PackageInfo,
-        ) = _import_types()
-        result = await query("coq")
-        assert isinstance(result, PackageInfo)
-        assert result.name == "coq"
 
 
 # ===========================================================================
@@ -1294,34 +1244,6 @@ class TestDependencyManagement:
                 result = await install("coq-broken-package")
         assert result.success is False
 
-    # --- Contract tests for subprocess mocks ---
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_check_dependency_conflicts_real(self):
-        """Contract: real opam --dry-run returns DependencyStatus."""
-        check = _import_check_dependency_conflicts()
-        (
-            BuildError, BuildRequest, BuildResult, BuildSystem,
-            ConflictDetail, ConstraintSource, DependencyStatus,
-            DetectionResult, MigrationResult, OpamMetadata, PackageInfo,
-        ) = _import_types()
-        result = await check([("coq", ">= 8.18")])
-        assert isinstance(result, DependencyStatus)
-        assert isinstance(result.satisfiable, bool)
-
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_install_package_real(self):
-        """Contract: real opam install returns BuildResult."""
-        install = _import_install_package()
-        (
-            BuildError, BuildRequest, BuildResult, BuildSystem,
-            *_rest
-        ) = _import_types()
-        # Use a package likely already installed to avoid side effects
-        result = await install("coq")
-        assert isinstance(result, BuildResult)
 
 
 # ===========================================================================
@@ -1481,13 +1403,6 @@ class TestDependencyErrors:
 
     # --- Contract test for shutil.which mock ---
 
-    @pytest.mark.requires_coq
-    @pytest.mark.asyncio
-    async def test_contract_opam_on_path(self):
-        """Contract: when opam is installed, shutil.which('opam') returns a path."""
-        import shutil
-        result = shutil.which("opam")
-        assert result is not None
 
 
 # ===========================================================================
@@ -1562,18 +1477,3 @@ class TestNonFunctional:
         mock_run.assert_not_called()
         mock_async.assert_not_called()
 
-    # --- Contract test for subprocess mock ---
-
-    @pytest.mark.requires_coq
-    def test_contract_detection_no_subprocess(self, tmp_path):
-        """Contract: real detect_build_system does not spawn subprocesses."""
-        detect = _import_detect()
-        (tmp_path / "dune-project").touch()
-        # Just verify it runs without error and returns a result
-        result = detect(tmp_path)
-        (
-            BuildError, BuildRequest, BuildResult, BuildSystem,
-            ConflictDetail, ConstraintSource, DependencyStatus,
-            DetectionResult, MigrationResult, OpamMetadata, PackageInfo,
-        ) = _import_types()
-        assert isinstance(result, DetectionResult)

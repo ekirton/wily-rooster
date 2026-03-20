@@ -1159,6 +1159,9 @@ class TestProfileLtac:
         mock_session_mgr.submit_command.return_value = ""
         mock_session_mgr.submit_tactic.side_effect = Exception("tactic failed")
         mock_session_mgr.close_proof_session.return_value = None
+        # Must be a sync MagicMock — the implementation calls this without await.
+        # Leaving it as an auto-created AsyncMock child produces an unawaited coroutine.
+        mock_session_mgr.get_original_script = MagicMock(return_value=["auto."])
 
         # The session must be retrieved from the mock to verify close is called
         try:

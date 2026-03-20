@@ -161,7 +161,7 @@ def _make_mock_session_manager(
     declaration_kinds = declaration_kinds or {}
     errors = errors or {}
 
-    async def _send_command(session_id, command):
+    async def _send_command(session_id, command, *, prefer_coqtop=False):
         if command in errors:
             raise errors[command]
         # Match Print Assumptions commands

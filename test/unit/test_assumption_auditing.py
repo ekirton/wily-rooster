@@ -206,6 +206,31 @@ class TestOutputParsing:
         assert result.axioms == []
         assert result.opaque_dependencies == []
 
+    def test_closed_theorem_with_rocq_prompt(self):
+        """coqtop may prefix output with 'Rocq < '; parser must strip it."""
+        parse = _import_parser()
+        result = parse("Rocq < Closed under the global context")
+        assert result.is_closed is True
+        assert result.axioms == []
+        assert result.opaque_dependencies == []
+
+    def test_closed_theorem_with_coq_prompt(self):
+        """coqtop may prefix output with 'Coq < '; parser must strip it."""
+        parse = _import_parser()
+        result = parse("Coq < Closed under the global context")
+        assert result.is_closed is True
+        assert result.axioms == []
+        assert result.opaque_dependencies == []
+
+    def test_dependency_lines_with_rocq_prompt(self):
+        """Dependency lines prefixed with 'Rocq < ' are parsed correctly."""
+        parse = _import_parser()
+        output = "Rocq < Classic : forall P : Prop, P \\/ ~ P"
+        result = parse(output)
+        assert result.is_closed is False
+        assert len(result.dependencies) == 1
+        assert result.dependencies[0].name == "Classic"
+
     def test_two_dependency_lines(self):
         """Given two dependency lines, extract name and type for each."""
         parse = _import_parser()

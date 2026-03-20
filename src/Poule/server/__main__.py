@@ -973,6 +973,7 @@ class _ServerContext:
         self.expected_version: str | None = None
         self.pipeline: _PipelineFacade | None = None
         self.session_manager: Any = None
+        self.process_pool: Any = None  # ProcessPool | None; for session-free coq_query
         self.renderer: _MermaidFacade = _MermaidFacade()
         self.diagram_dir: Any = None  # Path | None; set externally if configured
 
@@ -1269,6 +1270,10 @@ async def _init_context(db_path: Path, log_level: str) -> _ServerContext:
     from Poule.session.manager import SessionManager
 
     ctx.session_manager = SessionManager()  # Uses real create_coq_backend by default
+
+    from Poule.query.process_pool import ProcessPool
+
+    ctx.process_pool = ProcessPool()
 
     if not db_path.exists():
         logger.error("Database file not found: %s", db_path)

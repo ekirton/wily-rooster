@@ -423,6 +423,12 @@ class CoqProofBackend:
         Creates a temporary document containing the command, opens it,
         waits for diagnostics, and returns any diagnostic messages as
         the command output.
+
+        NOTE: coq-lsp only emits diagnostics for errors and warnings.
+        Successful queries (Print, Check, About) produce no diagnostics
+        and return empty strings.  For reliable output capture, callers
+        should route through a coqtop subprocess instead — the session
+        manager handles this automatically via _ensure_coqtop().
         """
         self._next_id += 1
         temp_uri = f"file:///tmp/poule_vernacular_{self._next_id}.v"

@@ -41,6 +41,32 @@ from Poule.session.types import (
 
 TIMEOUT_MINUTES = 30
 
+# Matches Require/Import/Export lines (possibly preceded by From ... ).
+_IMPORT_RE = re.compile(
+    r"^\s*(From\s+\S+\s+)?(Require|Import|Export)\b[^.]*\.",
+    re.MULTILINE,
+)
+
+
+def _extract_imports(file_path: str) -> str:
+    """Extract Require/Import lines from a .v file to use as coqtop prelude."""
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except (OSError, FileNotFoundError):
+        return ""
+    matches = _IMPORT_RE.findall(text)
+    if not matches:
+        # Fall back to line-by-line scan for robustness
+        lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if re.match(r"(From\s|Require\s|Import\s|Export\s)", stripped):
+                lines.append(stripped)
+        return "\n".join(lines)
+    # Use finditer for full match strings
+    return "\n".join(m.group(0) for m in _IMPORT_RE.finditer(text))
+
 
 def _normalize_session_id(session_id):
     """Extract the string session ID if a tuple (id, state) was passed."""
@@ -568,11 +594,66 @@ class SessionManager:
             output_lines.pop()
         return "".join(output_lines).strip()
 
-    async def send_command(self, session_id: str, command: str) -> str:
-        """Send a vernacular command to a coqtop session and return the output."""
+    async def _ensure_coqtop(self, ss: _SessionState) -> Any:
+        """Lazily spawn a coqtop process for vernacular commands.
+
+        For proof sessions backed by coq-lsp, coq-lsp cannot capture
+        the output of Print/Check/About commands (it only exposes
+        diagnostics, not query results).  We spawn a coqtop subprocess
+        on first use, loading the file's imports so queries execute in
+        the correct context.
+        """
+        if ss.coqtop_proc is not None:
+            return ss.coqtop_proc
+
+        proc = await asyncio.create_subprocess_exec(
+            "coqtop", "-quiet",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        # Drain any welcome output
+        sentinel_cmd = f'Check {self._SENTINEL}.\n'
+        proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
+        await proc.stdin.drain()  # type: ignore[union-attr]
+        await self._read_until_sentinel(proc)
+
+        # Load the file's imports so queries have the right context.
+        if ss.file_path:
+            prelude = _extract_imports(ss.file_path)
+            if prelude:
+                proc.stdin.write((prelude + "\n").encode("utf-8"))  # type: ignore[union-attr]
+                proc.stdin.write(sentinel_cmd.encode("utf-8"))  # type: ignore[union-attr]
+                await proc.stdin.drain()  # type: ignore[union-attr]
+                await self._read_until_sentinel(proc)
+
+        ss.coqtop_proc = proc
+        return proc
+
+    async def send_command(
+        self, session_id: str, command: str, *, prefer_coqtop: bool = False,
+    ) -> str:
+        """Send a vernacular command to a session and return the output.
+
+        Args:
+            session_id: Target session.
+            command: Vernacular command string.
+            prefer_coqtop: If True and the session is backed by coq-lsp,
+                lazily spawn a coqtop process for this command.  coq-lsp
+                cannot capture output of Print/Check/About, so callers
+                that need introspection output should set this flag.
+        """
         ss = await self.lookup_session(session_id)
 
         async with ss.lock:
+            if prefer_coqtop and ss.coqtop_proc is None and ss.coq_backend is not None:
+                try:
+                    await self._ensure_coqtop(ss)
+                except (OSError, FileNotFoundError):
+                    logger.warning("coqtop not available, falling back to coq-lsp")
+                    return await ss.coq_backend.execute_vernacular(command)
+
             proc = ss.coqtop_proc
             if proc is None:
                 # Fall back to coq_backend if available
@@ -597,8 +678,12 @@ class SessionManager:
             return output
 
     async def submit_vernacular(self, session_id: str, vernacular: str) -> str:
-        """Alias for send_command. Used by poule.query.handler."""
-        return await self.send_command(session_id, vernacular)
+        """Send a vernacular introspection command, preferring coqtop for output capture.
+
+        Used by coq_query handler.  coq-lsp cannot capture Print/Check/About
+        output, so this method prefers coqtop when available.
+        """
+        return await self.send_command(session_id, vernacular, prefer_coqtop=True)
 
     async def execute_vernacular(self, session_id: str, command: str) -> str:
         """Alias for send_command. Used by poule.typeclass.debugging."""

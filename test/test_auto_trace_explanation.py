@@ -45,19 +45,19 @@ def _import_analyzer():
 def _import_parser():
     from Poule.auto_trace.parser import parse_trace
 
-    return parse_trace
+    return (parse_trace,)
 
 
 def _import_classifier():
     from Poule.auto_trace.classifier import classify_hints
 
-    return classify_hints
+    return (classify_hints,)
 
 
 def _import_diagnoser():
     from Poule.auto_trace.diagnoser import diagnose_failures
 
-    return diagnose_failures
+    return (diagnose_failures,)
 
 
 def _import_types():
@@ -886,6 +886,7 @@ class TestVariantComparison:
     async def test_detects_divergence_auto_vs_eauto(self):
         """Given auto fails but eauto succeeds on the same goal, reports a divergence point."""
         _, _, compare_variants = _import_analyzer()
+        T = _import_types(); VariantComparison = T.VariantComparison
 
         # Mock that produces different outcomes per tactic
         manager = _make_mock_session_manager(tactic_outcome="failed", debug_messages=[])

@@ -254,6 +254,81 @@ class TestCoqQuery:
         )
         assert result.get("isError") is True
 
+    def test_session_free_passes_process_pool(self, ctx):
+        """handle_coq_query passes ctx.process_pool to coq_query for session-free calls."""
+        @dataclass
+        class _QueryResult:
+            command: str
+            argument: str
+            output: str
+            warnings: list
+
+        mock_result = _QueryResult(
+            command="Check",
+            argument="nat",
+            output="nat : Set",
+            warnings=[],
+        )
+        with patch(
+            "Poule.query.handler.coq_query",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_coq_query:
+            ctx.process_pool = MagicMock()
+            result = _dispatch_and_await(
+                ctx, "coq_query", {"command": "Check", "argument": "nat"}
+            )
+        assert result.get("isError") is not True
+        # Verify process_pool was forwarded to coq_query
+        call_kwargs = mock_coq_query.call_args
+        assert call_kwargs.kwargs.get("process_pool") is ctx.process_pool
+
+    def test_session_free_with_no_session_id(self, ctx):
+        """When session_id is omitted, handle_coq_query passes session_id=None."""
+        @dataclass
+        class _QueryResult:
+            command: str
+            argument: str
+            output: str
+            warnings: list
+
+        mock_result = _QueryResult(
+            command="Print",
+            argument="nat",
+            output="Inductive nat : Set := ...",
+            warnings=[],
+        )
+        with patch(
+            "Poule.query.handler.coq_query",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_coq_query:
+            ctx.process_pool = MagicMock()
+            _dispatch_and_await(
+                ctx, "coq_query", {"command": "Print", "argument": "nat"}
+            )
+        call_kwargs = mock_coq_query.call_args
+        assert call_kwargs.kwargs.get("session_id") is None
+
+
+# ---------------------------------------------------------------------------
+# TestServerContextProcessPool
+# ---------------------------------------------------------------------------
+
+class TestServerContextProcessPool:
+    """_ServerContext includes process_pool field for session-free coq_query."""
+
+    def test_process_pool_default_is_none(self):
+        _ServerContext = _import_server_ctx()
+        ctx = _ServerContext()
+        assert ctx.process_pool is None
+
+    def test_process_pool_is_settable(self):
+        _ServerContext = _import_server_ctx()
+        ctx = _ServerContext()
+        ctx.process_pool = "fake_pool"
+        assert ctx.process_pool == "fake_pool"
+
 
 # ---------------------------------------------------------------------------
 # TestNotationQuery

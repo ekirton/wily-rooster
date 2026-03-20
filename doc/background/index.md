@@ -12,6 +12,7 @@ Surveys and analyses of the state of the art. Documents here describe what exist
 | [coq-ecosystem-tooling.md](coq-ecosystem-tooling.md) | State of the art in Coq/Rocq tooling: IDE support, documentation, package management, CI/CD, proof visualization, and comparison with the Lean 4 ecosystem. |
 | [coq-library-ecosystem.md](coq-library-ecosystem.md) | Survey of the Coq/Rocq library ecosystem: standard libraries, mathematics, verification, meta-programming, automation, and community infrastructure; includes size, maintenance status, proof style, and cross-cutting ecosystem observations. |
 | [coq-premise-retrieval.md](coq-premise-retrieval.md) | Premise selection and lemma retrieval for Coq/Rocq: what exists today, state of the art in Lean and Isabelle, and research findings that inform future tool development. |
+| [common-questions.md](common-questions.md) | Taxonomy of recurring questions in Coq/Rocq and Lean communities, drawn from Discourse, Zulip, Stack Overflow, GitHub issues, Reddit, and mailing lists; clustered by kind with concrete examples. |
 
 ---
 

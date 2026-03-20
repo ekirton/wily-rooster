@@ -41,6 +41,7 @@ async def handle_coq_query(ctx: Any, *, command: str, argument: str, session_id:
             argument,
             session_id=session_id or None,
             session_manager=ctx.session_manager,
+            process_pool=ctx.process_pool,
         )
     except Exception as exc:
         # Check if it's a QueryError (has .code and .message)

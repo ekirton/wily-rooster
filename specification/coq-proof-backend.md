@@ -15,7 +15,7 @@ Define the `CoqBackend` protocol and the `create_coq_backend` factory function t
 
 **In scope**: `CoqBackend` protocol definition, `create_coq_backend` factory, process spawning and communication, `.v` file loading and proof positioning, tactic execution and state translation, undo mechanism, premise extraction, process shutdown and crash detection, error translation.
 
-**Out of scope**: Session registry and lifecycle management (owned by proof-session), proof state serialization (owned by proof-serialization), MCP protocol handling (owned by mcp-server), extraction of declarations from `.vo` files (owned by extraction — separate backend with a different interface).
+**Out of scope**: Session registry and lifecycle management (owned by proof-session), proof state serialization (owned by proof-serialization), MCP protocol handling (owned by mcp-server), extraction of declarations from `.vo` files (owned by extraction — separate backend with a different interface), vernacular command output capture (see §4.5).
 
 ## 3. Definitions
 
@@ -211,6 +211,24 @@ Classification shall use the Coq environment's declaration metadata. When a loca
 > **Given** a local hypothesis named `Nat.add_comm` that shadows the global lemma
 > **When** `apply Nat.add_comm.` is used and Coq resolves it to the local hypothesis
 > **Then** the premise has `kind = "hypothesis"` (matches what Coq resolved, not the global name)
+
+### 4.5 Vernacular Output Capture Limitation
+
+The `CoqBackend` protocol does not include a vernacular command execution operation. The coq-lsp backend communicates via the LSP JSON-RPC protocol, which does not expose the output of successful vernacular introspection commands (Print, Check, About, Locate, Search, Compute, Eval):
+
+| coq-lsp mechanism | What it returns | Captures vernacular output? |
+|---|---|---|
+| LSP diagnostics | Errors and warnings only | No — successful queries emit no diagnostic |
+| `textDocument/hover` | Type information for identifiers at cursor position | No — returns hover data, not command output |
+| `coq/getDocument` | Document span ranges | No — returns structural metadata without content |
+
+This is an inherent limitation of the LSP protocol as implemented by coq-lsp, not a bug.
+
+The session manager is responsible for vernacular output capture. When a session requires vernacular command execution (via `submit_command`), the session manager shall use a coqtop subprocess rather than the session's CoqBackend. See [proof-session.md](proof-session.md) §4.4 for the coqtop subprocess lifecycle and routing.
+
+> **Given** a coq-lsp backend with a loaded file
+> **When** a `Print nat.` command is executed via LSP diagnostics
+> **Then** the diagnostics collection is empty (no error occurred, but no output is captured)
 
 ## 5. Data Model
 

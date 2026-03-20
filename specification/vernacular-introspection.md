@@ -22,10 +22,11 @@ Define the vernacular query handler that, given a command name and argument, con
 |------|-----------|
 | Vernacular command | A Coq toplevel command that queries the environment without modifying it |
 | Command dispatcher | The mapping from `(command, argument)` to a Coq vernacular string |
-| Session-aware execution | Execution within an existing proof session's context (loaded files, imports, proof state) |
+| Session-aware execution | Execution within an existing proof session's import context (loaded files, imported modules) via a coqtop subprocess; local proof state (hypotheses, let-bindings) is not available |
 | Session-free execution | Execution against a short-lived or pooled Coq process with only the default global environment |
 | Query result | The structured response containing the command echo, argument echo, parsed output, and extracted warnings |
 | Output parser | The transformation from raw Coq output to the `output` and `warnings` fields of `QueryResult` |
+| Prelude | A configurable sequence of Coq vernacular commands executed before each session-free query to establish the default global environment. Configurable at server startup; default: `From Coq Require Import Arith.` |
 | Search truncation limit | The maximum number of result entries returned for `Search` commands before truncation (default: 50) |
 
 ## 4. Behavioral Requirements
@@ -44,7 +45,7 @@ Define the vernacular query handler that, given a command name and argument, con
 
 > **Given** `command = "Print"`, `argument = "nat"`, and `session_id = "abc123"` referencing an active session
 > **When** `coq_query` is called
-> **Then** the handler sends `Print nat.` to the session's Coq backend and returns a `QueryResult` with `output` containing the inductive definition of `nat`
+> **Then** the handler sends `Print nat.` to the session's coqtop subprocess and returns a `QueryResult` with `output` containing the inductive definition of `nat`
 
 > **Given** `command = "Eval"`, `argument = "cbv in 1 + 1"`, and no `session_id`
 > **When** `coq_query` is called
@@ -83,24 +84,34 @@ The `session_id` parameter determines the execution backend.
 #### Session-aware execution (session_id provided)
 
 1. The handler shall resolve the session via the Proof Session Manager's session registry.
-2. The handler shall submit the vernacular command string to the session's Coq backend process.
-3. The command shall execute in the session's full context: loaded files, imported modules, and the current proof state including local hypotheses and let-bindings.
+2. The handler shall submit the vernacular command string to the session via `submit_command`. The session manager routes this through a coqtop subprocess (not the session's coq-lsp backend), because coq-lsp's LSP protocol does not expose vernacular command output. See [proof-session.md](proof-session.md) §4.4.1.
+3. The command shall execute in the session's import context: loaded files and imported modules. Local proof hypotheses and let-bindings from the coq-lsp proof state are not available in the coqtop subprocess.
 
-- MAINTAINS: The session's proof state is not modified. Introspection commands are read-only.
+- MAINTAINS: The session's proof state (managed by the CoqBackend) is not modified. The coqtop subprocess environment may be modified by side-effecting commands, but this does not affect the proof state.
 
-> **Given** a proof session with hypothesis `H : a = b` in context and `command = "Check"`, `argument = "H"`
+> **Given** a proof session with `Require Import Arith.` in the file preamble and `command = "Check"`, `argument = "Nat.add_comm"`
 > **When** `coq_query` executes in session context
-> **Then** the output contains the type of `H` (i.e., `a = b`)
+> **Then** the output contains the type of `Nat.add_comm` (i.e., `forall n m : nat, n + m = m + n`)
 
 #### Session-free execution (session_id omitted)
 
 1. The handler shall obtain a Coq process (spawned or drawn from a pool).
-2. The command shall execute against the default global environment (standard library and project-level imports configured for the MCP server).
-3. The process shall be released (returned to pool or terminated) after the command completes.
+2. The standalone process shall inherit the server process's environment variables, including `PATH` and `COQPATH`. This makes opam-installed Coq packages reachable via `Require Import` without explicit `-R` / `-Q` flags.
+3. Before executing the user's command, the process shall execute a configurable **prelude** — a sequence of Coq vernacular commands (typically `Require Import` statements) that establish the default global environment.
+4. The prelude shall be configurable at server startup. When no prelude is configured, the default prelude loads the Coq standard library arithmetic module: `From Coq Require Import Arith.`
+5. The command shall execute after the prelude completes. The process shall be released (returned to pool or terminated) after the command completes.
+
+- REQUIRES: The prelude is a valid sequence of Coq vernacular commands that terminates without error.
+- ENSURES: The user's command executes in an environment where (a) all prelude imports are available and (b) all opam-installed Coq packages are reachable via `Require Import` through the inherited `COQPATH`.
+- MAINTAINS: Each session-free invocation starts from a clean environment (prelude + command only). No state persists between invocations.
 
 > **Given** no `session_id` and `command = "Locate"`, `argument = "Nat.add"`
 > **When** `coq_query` executes session-free
 > **Then** the output contains the module path of `Nat.add` from the standard library
+
+> **Given** no `session_id`, MathComp is opam-installed, and `command = "Print"`, `argument = "leq"`
+> **When** `coq_query` executes session-free with prelude `From Coq Require Import Arith. From mathcomp Require Import all_ssreflect.`
+> **Then** the output contains MathComp's definition of `leq`
 
 ### 4.4 Output Parsing
 
@@ -162,7 +173,7 @@ Error responses use the standard MCP error format:
 
 | Property | Value |
 |----------|-------|
-| Operations used | Submit vernacular command string to session's Coq backend (read-only) |
+| Operations used | `submit_command` — routes through the session's coqtop subprocess (not the CoqBackend); see [proof-session.md](proof-session.md) §4.4.1 |
 | Concurrency | Serialized — one command at a time per session |
 | Error strategy | `SESSION_NOT_FOUND` → return error to caller. `BACKEND_CRASHED` → return error to caller. |
 | Idempotency | Introspection commands are idempotent; re-executing the same command produces the same output given the same session state. |
@@ -254,7 +265,7 @@ Response:
 coq_query(command="Print", argument="nat", session_id="abc123")
 
 Vernacular: Print nat.
-Backend: session abc123
+Backend: session abc123 (coqtop subprocess)
 
 Response:
 {
@@ -300,7 +311,7 @@ Response:
 coq_query(command="Eval", argument="cbv in 2 + 3", session_id="def456")
 
 Vernacular: Eval cbv in 2 + 3.
-Backend: session def456
+Backend: session def456 (coqtop subprocess)
 
 Response:
 {
@@ -320,3 +331,4 @@ Response:
 - Error classification: a `classify_error(raw: str) -> tuple[str, str]` function returning `(error_code, message)`, using compiled regex patterns.
 - Use the `anthropic` Python SDK's MCP server utilities for response envelope construction.
 - Timeout for `Compute` and `Eval`: enforce via `asyncio.wait_for` on the backend call (default: 30 seconds, configurable).
+- The standalone process pool accepts a `prelude` string parameter at construction time (default: `"From Coq Require Import Arith.\n"`). The MCP server passes this from its startup configuration.

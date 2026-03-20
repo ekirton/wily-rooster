@@ -232,12 +232,14 @@ echo
 
 # --- Delete existing releases ---
 
-existing_tags=$(gh release list --json tagName --jq '.[].tagName' 2>/dev/null || true)
-for old_tag in $existing_tags; do
-    if [[ "$old_tag" == "$TAG_LIBRARIES" || "$old_tag" == "$TAG_MERGED" ]]; then
+for old_tag in "$TAG_LIBRARIES" "$TAG_MERGED"; do
+    if gh release view "$old_tag" &>/dev/null; then
         echo "Deleting existing release ${old_tag}..."
         gh release delete "$old_tag" --yes --cleanup-tag
     fi
+    # Remove any lingering local or remote tag
+    git tag -d "$old_tag" 2>/dev/null || true
+    git push origin ":refs/tags/${old_tag}" 2>/dev/null || true
 done
 
 # --- Create libraries release ---

@@ -82,12 +82,17 @@ NEED_BUILD=false
 BUILD_REASON=""
 DEFERRED_UPDATE=false
 
+DOCKERFILE_HASH=$(sha256sum "$PROJECT_DIR/Dockerfile" | cut -d' ' -f1)
+
 if [ "$DEV_IMAGE_EXISTS" -eq 0 ]; then
     NEED_BUILD=true
     BUILD_REASON="initial"
 elif [ "$REBUILD" = true ]; then
     NEED_BUILD=true
     BUILD_REASON="requested"
+elif [ "$DOCKERFILE_HASH" != "$(docker inspect --format '{{index .Config.Labels "poule.dockerfile.hash"}}' "$DEV_IMAGE" 2>/dev/null || true)" ]; then
+    NEED_BUILD=true
+    BUILD_REASON="Dockerfile changed"
 elif [ -n "$CLAUDE_LATEST" ]; then
     INSTALLED=$(docker inspect --format '{{index .Config.Labels "claude.code.version"}}' "$DEV_IMAGE" 2>/dev/null || true)
     if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "latest" ] && [ "$INSTALLED" != "$CLAUDE_LATEST" ]; then
@@ -104,6 +109,7 @@ if [ "$NEED_BUILD" = true ]; then
         --build-arg HOST_USER="$HOST_USER" \
         --build-arg HOST_GROUP="$HOST_GROUP" \
         --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST:-latest}" \
+        --label "poule.dockerfile.hash=$DOCKERFILE_HASH" \
         -t "$DEV_IMAGE" \
         "$PROJECT_DIR"
 fi
@@ -364,6 +370,7 @@ if [ "$DEFERRED_UPDATE" = true ]; then
                 --build-arg HOST_GROUP="$HOST_GROUP" \
                 --build-arg CLAUDE_CODE_VERSION="${CLAUDE_LATEST}" \
                 --build-arg CACHEBUST_CLAUDE="$(date +%s)" \
+                --label "poule.dockerfile.hash=$DOCKERFILE_HASH" \
                 -t "$DEV_IMAGE" \
                 "$PROJECT_DIR"; then
                 echo "Claude Code v${CLAUDE_LATEST} ready for next launch."

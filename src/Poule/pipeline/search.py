@@ -64,6 +64,40 @@ def _alias_symbol(sym: str) -> str | None:
     return None
 
 
+def _resolve_one(sym: str, ctx: Any) -> set[str]:
+    """Resolve a single symbol via exact match, suffix index, or prefix alias."""
+    if sym in ctx.inverted_index:
+        return {sym}
+    if sym in ctx.suffix_index:
+        return set(ctx.suffix_index[sym])
+    aliased = _alias_symbol(sym)
+    if aliased is not None:
+        if aliased in ctx.inverted_index:
+            return {aliased}
+        if aliased in ctx.suffix_index:
+            return set(ctx.suffix_index[aliased])
+    return set()
+
+
+def _expand_suffixes(sym: str, ctx: Any) -> set[str]:
+    """Collect additional index keys that are suffixes of *sym*.
+
+    When the index stores the same constant under both a short name
+    (``Nat.add``) and a Corelib FQN (``Corelib.Init.Nat.add``), an exact
+    match on the FQN misses the majority of declarations that use the short
+    name.  This helper finds those short-form keys so MePo can see them all.
+    """
+    extra: set[str] = set()
+    parts = sym.split(".")
+    for k in range(1, len(parts)):
+        suffix = ".".join(parts[k:])
+        if suffix in ctx.inverted_index:
+            extra.add(suffix)
+        if suffix in ctx.suffix_index:
+            extra.update(ctx.suffix_index[suffix])
+    return extra
+
+
 def resolve_query_symbols(ctx: Any, symbols: list[str]) -> set[str]:
     """Resolve symbol names to FQNs using the suffix index.
 
@@ -72,24 +106,20 @@ def resolve_query_symbols(ctx: Any, symbols: list[str]) -> set[str]:
     2. Suffix match via suffix_index → expand to all matching FQNs.
     3. Prefix alias (Coq.* → Corelib.*) → retry steps 1–2 with aliased form.
     4. No match → include as-is (passthrough).
+
+    After primary resolution, qualified symbols (containing dots) are also
+    expanded via their own suffixes to catch short-form index keys that refer
+    to the same constant (e.g. ``Nat.add`` alongside ``Corelib.Init.Nat.add``).
     """
     resolved: set[str] = set()
     for sym in symbols:
-        if sym in ctx.inverted_index:
-            resolved.add(sym)
-        elif sym in ctx.suffix_index:
-            resolved.update(ctx.suffix_index[sym])
+        primary = _resolve_one(sym, ctx)
+        if primary:
+            resolved.update(primary)
+            if "." in sym:
+                resolved.update(_expand_suffixes(sym, ctx))
         else:
-            aliased = _alias_symbol(sym)
-            if aliased is not None:
-                if aliased in ctx.inverted_index:
-                    resolved.add(aliased)
-                elif aliased in ctx.suffix_index:
-                    resolved.update(ctx.suffix_index[aliased])
-                else:
-                    resolved.add(sym)
-            else:
-                resolved.add(sym)
+            resolved.add(sym)
     return resolved
 
 

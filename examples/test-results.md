@@ -4,7 +4,7 @@
 
 The examples of user prompts are used as end-to-end tests.  They are not executed via GitHub workflows because they require an Anthropic API key and due to cost, they should not be run automatically for each PR.
 
-Tested: 2026-03-21 (full rerun of all non-SKIP tests)
+Tested: 2026-03-21 (retest of 1.2, 1.3, 1.4 after suffix expansion and query-time type normalization fixes)
 
 ## Instructions for Claude
 
@@ -24,11 +24,11 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 - **FAIL** — tool returned an error, empty results, or clearly unrelated results
 - **SKIP** — prompt requires context that doesn't exist (active proof session, user-specific files, or is a slash command)
 
-**Summary: 50 PASS, 4 FAIL, 35 SKIP (89 total)**
+**Summary: 51 PASS, 3 FAIL, 35 SKIP (89 total)**
 
 | Section | PASS | FAIL | SKIP |
 |---------|------|------|------|
-| 1. Discovery and Search | 10 | 2 | 3 |
+| 1. Discovery and Search | 11 | 1 | 3 |
 | 2. Understanding Errors | 4 | 0 | 6 |
 | 3. Navigation | 8 | 2 | 0 |
 | 4. Proof Construction | 16 | 0 | 7 |
@@ -44,9 +44,9 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 | # | Prompt | Result | Reason |
 |---|--------|--------|--------|
 | 1.1 | Find lemmas about list reversal being involutive | PASS | search_by_name returned Coq.Lists.List.rev_involutive with score 1.0 |
-| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | FAIL | search_by_symbols returned empty results for ["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"] — symbol index may require different qualification |
+| 1.2 | Which lemmas in stdlib mention both Nat.add and Nat.mul? | PASS | search_by_symbols returned 50 results for ["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"] after suffix expansion fix resolved FQNs to short-form index keys |
 | 1.3 | Search for lemmas with type forall n : nat, n + 0 = n | PASS | search_by_type returned 50 results including Coq.Arith.PeanoNat.Nat.add_0_r and Coq.Init.Peano.plus_n_O |
-| 1.4 | Find a lemma of type List.map f (List.map g l) = List.map (fun x => f (g x)) l | FAIL | search_by_type returned 50 results but none match List.map_map — higher-order/lambda query structure defeats matching heuristic |
+| 1.4 | Find a lemma of type List.map f (List.map g l) = List.map (fun x => f (g x)) l | FAIL | search_by_type returned 50 results but none match List.map_map — Coq.Lists.List.map_map lacks structural data in the index (no constr_tree, no WL histogram, empty symbol_set) so only FTS can reach it |
 | 1.5 | Find all commutativity lemmas in MathComp — anything matching _ * _ = _ * _ | PASS | search_by_structure returned 50 structurally similar results with decl_id and scores up to 0.40 |
 | 1.6 | Find lemmas concluding with _ + _ <= _ | PASS | search_by_structure returned 50 structurally similar results with scores up to 0.53 |
 | 1.7 | What rewrites exist for Nat.add n 0? | PASS | search_by_name returned 12 results including Nat.add_0_r, Nat.add_0_l, and Nat.eq_add_0 |
@@ -172,11 +172,13 @@ Each prompt from `README.md` was executed against the Poule MCP tools and evalua
 
 ## Remaining Issues
 
-### search_by_symbols returns empty (1.2)
-- `search_by_symbols` returned empty results for `["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"]` — symbols may require different qualification or the symbol index does not cover these entries
-
 ### search_by_type misses higher-order queries (1.4)
-- `search_by_type` for the `List.map` composition lemma returned 50 results but none matched `List.map_map` — the higher-order/lambda structure of the query type defeats the current matching heuristic
+- `search_by_type` for the `List.map` composition lemma returned 50 results but none matched `List.map_map`
+- **Query normalization (fixed)**: `search_by_type` now resolves short constant names to FQNs, detects free variables (`f`, `g`, `l`) and wraps them in forall binders converting `Const` nodes to `Rel`, and uses a relaxed WL size filter (2.0 vs 1.2). This enables structural and symbol channels to match queries written as type patterns against fully-quantified indexed types.
+- **Blocking issue — incomplete index data**: `Coq.Lists.List.map_map` has `node_count=1`, no `constr_tree`, no WL histogram, and empty `symbol_set` in the index. 45% of declarations (37K of 82K) lack structural data. No amount of query normalization can surface a declaration with no structural or symbol data — only FTS can reach it. This is the primary reason the test still fails.
+- **Remaining gap — FQN display name mismatch**: the user writes `List.map` but the index stores the canonical definition FQN `ListDef.map` (Coq re-exports `ListDef.map` as `List.map`). The suffix index has `map` but not `List.map`, so FQN resolution fails for this specific name.
+- **Remaining gap — binder type approximation**: forall-wrapped free variables receive `Sort("Type")` as binder type, while indexed types have concrete binder types (e.g., `A -> B`, `list A`). The outer quantifier nodes score lower on structural matching, but the body — the majority of both trees — matches well.
+- **Pending E2E verification**: unit tests pass; MCP server restart required to verify the normalization fix against declarations that do have structural data.
 
 ### impact_analysis returns empty graphs (3.4, 3.5)
 - `impact_analysis` returns only root node with 0 edges for stdlib lemmas (`Nat.add_comm`, `Nat.add_0_r`) even with fully qualified names — reverse dependency edges not populated

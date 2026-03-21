@@ -121,6 +121,45 @@ def _mock_context_corelib(parser=None):
     return ctx
 
 
+def _mock_context_mixed_symbols(parser=None):
+    """Return a PipelineContext-like mock reflecting production index where
+    the same symbol appears under both short (Nat.add) and Corelib FQN
+    (Corelib.Init.Nat.add) keys, pointing to different declaration sets.
+
+    This mirrors the real index: most declarations use short names (Nat.add)
+    while a few use Corelib-qualified names (Corelib.Init.Nat.add).
+    """
+    ctx = MagicMock(spec=PipelineContext)
+    ctx.reader = MagicMock()
+    ctx.wl_histograms = {i: {"label_A": 1} for i in range(1, 7)}
+    ctx.inverted_index = {
+        # Short names — most declarations use these
+        "Nat.add": {1, 2, 3, 4},
+        "Nat.mul": {2, 3, 4, 5},
+        "=": {1, 2, 3, 4, 5, 6},
+        "Corelib.Init.Datatypes.nat": {1, 2, 3, 4, 5, 6},
+        # Corelib FQN — a few declarations use these
+        "Corelib.Init.Nat.add": {6},
+        "Corelib.Init.Nat.mul": {6},
+    }
+    ctx.symbol_frequencies = {
+        "Nat.add": 4,
+        "Nat.mul": 4,
+        "=": 6,
+        "Corelib.Init.Datatypes.nat": 6,
+        "Corelib.Init.Nat.add": 1,
+        "Corelib.Init.Nat.mul": 1,
+    }
+    ctx.declaration_node_counts = {i: 10 for i in range(1, 7)}
+    ctx.declaration_symbols = {}
+    for sym, ids in ctx.inverted_index.items():
+        for did in ids:
+            ctx.declaration_symbols.setdefault(did, set()).add(sym)
+    ctx.suffix_index = _build_suffix_index(ctx.inverted_index)
+    ctx.parser = parser
+    return ctx
+
+
 def _mock_context(parser=None):
     """Return a PipelineContext-like mock with all expected fields."""
     ctx = MagicMock(spec=PipelineContext)
@@ -440,6 +479,36 @@ class TestResolveQuerySymbols:
         resolved = resolve_query_symbols(ctx, ["Coq.Init.Nat.add"])
 
         assert "Coq.Init.Nat.add" in resolved
+
+    def test_fqn_also_resolves_short_form_via_suffix(self):
+        """When the index stores both Corelib.Init.Nat.add (few decls) and
+        Nat.add (many decls), querying with the FQN should resolve to both
+        so MePo can find all relevant declarations."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_mixed_symbols()
+
+        resolved = resolve_query_symbols(ctx, ["Corelib.Init.Nat.add"])
+
+        # Must include the exact match
+        assert "Corelib.Init.Nat.add" in resolved
+        # Must ALSO include the short form (Nat.add is a suffix of
+        # Corelib.Init.Nat.add, and Nat.add is a key in the inverted index)
+        assert "Nat.add" in resolved
+
+    def test_fqn_suffix_expansion_finds_both_symbols(self):
+        """Querying with two Corelib FQNs resolves both to their short forms,
+        enabling MePo to find declarations containing both Nat.add and Nat.mul."""
+        from Poule.pipeline.search import resolve_query_symbols
+
+        ctx = _mock_context_mixed_symbols()
+
+        resolved = resolve_query_symbols(
+            ctx, ["Corelib.Init.Nat.add", "Corelib.Init.Nat.mul"]
+        )
+
+        assert "Nat.add" in resolved
+        assert "Nat.mul" in resolved
 
 
 class TestSearchBySymbols:

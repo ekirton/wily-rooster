@@ -81,6 +81,45 @@ Dependency graph extraction can run in two modes:
 
 Mode 1 avoids re-reading the output file but couples graph extraction to the campaign. Mode 2 is more flexible — it can be run on any extraction output without re-running the campaign.
 
+## Integration with Search Index
+
+The dependency graph produced by extraction campaigns provides theorem-to-theorem edges that cannot be obtained from `.vo`-only analysis (`Print Assumptions` returns axiom-level assumptions, not the theorems a proof invokes). These edges are the primary data source for deep dependency analysis tools (impact analysis, transitive closure, cycle detection).
+
+### Import pipeline
+
+```
+import_dependencies(dependency_graph_path, index_db_path)
+  │
+  ├─ Open existing index database (read/write)
+  │
+  ├─ Read JSON Lines dependency graph file
+  │
+  ├─ For each DependencyEntry:
+  │    ├─ Resolve theorem_name to declaration ID in index
+  │    │
+  │    ├─ For each DependencyRef in depends_on:
+  │    │    ├─ Resolve ref.name to declaration ID in index
+  │    │    │    (exact match, then suffix match against indexed FQNs)
+  │    │    │
+  │    │    ├─ Skip unresolvable names (dependency outside indexed scope)
+  │    │    │
+  │    │    └─ Insert (src_id, dst_id, "uses") into dependencies table
+  │    │
+  │    └─ Deduplicate edges by (src, dst, relation)
+  │
+  └─ Commit
+```
+
+### Relationship to existing dependency sources
+
+The index build pipeline (`run_extraction`) already inserts dependency edges from three sources: tree-based `LConst` extraction, `Print Assumptions` output, and symbol-set cross-referencing. All three derive from type signatures and axiom-level assumptions — none capture proof-body dependencies for opaque theorems.
+
+Premise-based import adds a fourth source that captures the actual theorems and definitions each proof uses. Edges from all four sources are merged and deduplicated by `(src, dst, relation)` in the `dependencies` table's primary key.
+
+### When to run
+
+Import runs after both the index build and the extraction campaign complete. The index must exist (provides the declaration ID mapping). The dependency graph file must exist (provides the edges). The import is idempotent — running it again on the same data produces no duplicate edges due to the primary key constraint.
+
 ## Design Rationale
 
 ### Why derive from premises rather than independent static analysis

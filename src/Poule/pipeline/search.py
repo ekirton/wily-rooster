@@ -13,6 +13,7 @@ from Poule.models.responses import SearchResult
 from Poule.channels.ted import ted_similarity
 from Poule.channels.wl_kernel import wl_histogram, wl_screen
 from Poule.fusion.fusion import collapse_match, rrf_fuse
+from Poule.normalization.constr_node import App, Const, Lambda, Prod, Rel, Sort
 from Poule.normalization.cse import cse_normalize
 from Poule.normalization.errors import NormalizationError as _InternalNormalizationError
 from Poule.normalization.normalize import coq_normalize
@@ -45,20 +46,78 @@ def search_by_name(ctx: Any, pattern: str, limit: int) -> list[Any]:
     return results[:limit]
 
 
+# Legacy prefix aliases: Rocq 9.x renamed Coq stdlib from Coq.* to Corelib.*.
+# Users still query with Coq.* names, so we rewrite before lookup.
+_PREFIX_ALIASES: list[tuple[str, str]] = [
+    ("Coq.", "Corelib."),
+]
+
+
+def _alias_symbol(sym: str) -> str | None:
+    """Rewrite a symbol using known legacy prefix aliases.
+
+    Returns the aliased form, or None if no alias applies.
+    """
+    for old, new in _PREFIX_ALIASES:
+        if sym.startswith(old):
+            return new + sym[len(old):]
+    return None
+
+
+def _resolve_one(sym: str, ctx: Any) -> set[str]:
+    """Resolve a single symbol via exact match, suffix index, or prefix alias."""
+    if sym in ctx.inverted_index:
+        return {sym}
+    if sym in ctx.suffix_index:
+        return set(ctx.suffix_index[sym])
+    aliased = _alias_symbol(sym)
+    if aliased is not None:
+        if aliased in ctx.inverted_index:
+            return {aliased}
+        if aliased in ctx.suffix_index:
+            return set(ctx.suffix_index[aliased])
+    return set()
+
+
+def _expand_suffixes(sym: str, ctx: Any) -> set[str]:
+    """Collect additional index keys that are suffixes of *sym*.
+
+    When the index stores the same constant under both a short name
+    (``Nat.add``) and a Corelib FQN (``Corelib.Init.Nat.add``), an exact
+    match on the FQN misses the majority of declarations that use the short
+    name.  This helper finds those short-form keys so MePo can see them all.
+    """
+    extra: set[str] = set()
+    parts = sym.split(".")
+    for k in range(1, len(parts)):
+        suffix = ".".join(parts[k:])
+        if suffix in ctx.inverted_index:
+            extra.add(suffix)
+        if suffix in ctx.suffix_index:
+            extra.update(ctx.suffix_index[suffix])
+    return extra
+
+
 def resolve_query_symbols(ctx: Any, symbols: list[str]) -> set[str]:
     """Resolve symbol names to FQNs using the suffix index.
 
     Resolution per symbol:
     1. Exact match in inverted_index → use directly.
     2. Suffix match via suffix_index → expand to all matching FQNs.
-    3. No match → include as-is (passthrough).
+    3. Prefix alias (Coq.* → Corelib.*) → retry steps 1–2 with aliased form.
+    4. No match → include as-is (passthrough).
+
+    After primary resolution, qualified symbols (containing dots) are also
+    expanded via their own suffixes to catch short-form index keys that refer
+    to the same constant (e.g. ``Nat.add`` alongside ``Corelib.Init.Nat.add``).
     """
     resolved: set[str] = set()
     for sym in symbols:
-        if sym in ctx.inverted_index:
-            resolved.add(sym)
-        elif sym in ctx.suffix_index:
-            resolved.update(ctx.suffix_index[sym])
+        primary = _resolve_one(sym, ctx)
+        if primary:
+            resolved.update(primary)
+            if "." in sym:
+                resolved.update(_expand_suffixes(sym, ctx))
         else:
             resolved.add(sym)
     return resolved
@@ -90,6 +149,189 @@ def _ensure_parser(ctx: Any) -> None:
         return
     from Poule.parsing.type_expr_parser import TypeExprParser
     ctx.parser = TypeExprParser()
+
+
+_COQ_KEYWORDS = frozenset({
+    "forall", "fun", "match", "let", "in", "if", "then", "else",
+    "return", "as", "with", "end", "fix", "cofix",
+    "Prop", "Set", "Type",
+})
+
+
+def _is_free_variable(name: str) -> bool:
+    """Return True if *name* looks like a user-intended free variable.
+
+    Free variables are simple lowercase identifiers: no dots, not numeric,
+    not a Coq keyword, and starting with a lowercase letter or underscore.
+    """
+    if not name:
+        return False
+    if "." in name:
+        return False
+    if name in _COQ_KEYWORDS:
+        return False
+    # Must start with a lowercase letter or underscore
+    if not (name[0].islower() or name[0] == "_"):
+        return False
+    return True
+
+
+def _resolve_const_name(name: str, ctx: Any) -> str | None:
+    """Try to resolve a constant name to a single FQN via the suffix index.
+
+    Returns the resolved FQN, or None if the name is already an FQN,
+    ambiguous, or unresolvable.
+    """
+    if name in ctx.inverted_index:
+        return name  # already an FQN
+    if name in ctx.suffix_index:
+        fqns = ctx.suffix_index[name]
+        if len(fqns) == 1:
+            return fqns[0] if isinstance(fqns, list) else next(iter(fqns))
+    # Try prefix aliasing
+    aliased = _alias_symbol(name)
+    if aliased is not None:
+        if aliased in ctx.inverted_index:
+            return aliased
+        if aliased in ctx.suffix_index:
+            fqns = ctx.suffix_index[aliased]
+            if len(fqns) == 1:
+                return fqns[0] if isinstance(fqns, list) else next(iter(fqns))
+    return None
+
+
+def _resolve_consts_in_tree(node: object, ctx: Any) -> object:
+    """Walk a ConstrNode tree and resolve Const names to FQNs where possible."""
+    if isinstance(node, Const):
+        resolved = _resolve_const_name(node.fqn, ctx)
+        if resolved is not None and resolved != node.fqn:
+            return Const(resolved)
+        return node
+
+    if isinstance(node, Rel) or isinstance(node, Sort):
+        return node
+
+    if isinstance(node, Prod):
+        return Prod(node.name, _resolve_consts_in_tree(node.type, ctx),
+                     _resolve_consts_in_tree(node.body, ctx))
+
+    if isinstance(node, Lambda):
+        return Lambda(node.name, _resolve_consts_in_tree(node.type, ctx),
+                       _resolve_consts_in_tree(node.body, ctx))
+
+    if isinstance(node, App):
+        return App(_resolve_consts_in_tree(node.func, ctx),
+                   [_resolve_consts_in_tree(a, ctx) for a in node.args])
+
+    # For other node types, return as-is (they don't contain Const children
+    # in typical type expressions from the parser)
+    return node
+
+
+def _collect_free_vars(node: object) -> list[str]:
+    """Collect free variable names in left-to-right, depth-first order.
+
+    Returns a deduplicated list preserving first-occurrence order.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+
+    def _walk(n: object) -> None:
+        if isinstance(n, Const) and _is_free_variable(n.fqn):
+            if n.fqn not in seen:
+                seen.add(n.fqn)
+                result.append(n.fqn)
+        elif isinstance(n, Prod):
+            _walk(n.type)
+            _walk(n.body)
+        elif isinstance(n, Lambda):
+            _walk(n.type)
+            _walk(n.body)
+        elif isinstance(n, App):
+            _walk(n.func)
+            for a in n.args:
+                _walk(a)
+
+    _walk(node)
+    return result
+
+
+def _replace_free_vars(node: object, var_map: dict[str, int], depth: int) -> object:
+    """Replace free variable Const nodes with Rel nodes.
+
+    *var_map* maps variable name → binding depth (0-based, outermost = 0).
+    *depth* is the current binder depth (incremented when entering Prod/Lambda).
+    """
+    if isinstance(node, Const):
+        if node.fqn in var_map:
+            binding_depth = var_map[node.fqn]
+            # de Bruijn index = distance from current depth to binding depth + 1
+            return Rel(depth - binding_depth)
+        return node
+
+    if isinstance(node, Rel) or isinstance(node, Sort):
+        return node
+
+    if isinstance(node, Prod):
+        return Prod(
+            node.name,
+            _replace_free_vars(node.type, var_map, depth),
+            _replace_free_vars(node.body, var_map, depth + 1),
+        )
+
+    if isinstance(node, Lambda):
+        return Lambda(
+            node.name,
+            _replace_free_vars(node.type, var_map, depth),
+            _replace_free_vars(node.body, var_map, depth + 1),
+        )
+
+    if isinstance(node, App):
+        return App(
+            _replace_free_vars(node.func, var_map, depth),
+            [_replace_free_vars(a, var_map, depth) for a in node.args],
+        )
+
+    return node
+
+
+def normalize_type_query(ctx: Any, constr_node: object) -> object:
+    """Normalize a parsed type query for search_by_type.
+
+    1. Resolve constant names to FQNs via the suffix index.
+    2. Detect free variables (unresolved simple lowercase identifiers).
+    3. Wrap in forall binders, converting free variable Const nodes to Rel.
+
+    Returns the transformed ConstrNode.
+    """
+    # Step 1: Resolve constants to FQNs
+    resolved = _resolve_consts_in_tree(constr_node, ctx)
+
+    # Step 2: Detect free variables
+    free_vars = _collect_free_vars(resolved)
+    if not free_vars:
+        return resolved
+
+    # Step 3: Skip wrapping if outermost node is already Prod (user wrote forall)
+    if isinstance(resolved, Prod):
+        return resolved
+
+    # Build var_map: maps each free var name to its binding depth (0-based)
+    # Outermost binder is depth 0, next is depth 1, etc.
+    var_map: dict[str, int] = {}
+    for i, name in enumerate(free_vars):
+        var_map[name] = i
+
+    # Replace free var references with Rel nodes
+    # The body starts at depth = len(free_vars) (after all the Prod binders)
+    body = _replace_free_vars(resolved, var_map, len(free_vars))
+
+    # Wrap in Prod binders: innermost last, so build from right to left
+    result = body
+    for name in reversed(free_vars):
+        result = Prod(name, Sort("Type"), result)
+
+    return result
 
 
 def search_by_structure(ctx: Any, expression: str, limit: int) -> list[Any]:
@@ -203,7 +445,10 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     _ensure_parser(ctx)
     constr_node = ctx.parser.parse(type_expr)
 
-    # Steps 2: Normalize (NormalizationError -> empty results)
+    # Step 2: Query-time type normalization (FQN resolution + free var wrapping)
+    constr_node = normalize_type_query(ctx, constr_node)
+
+    # Step 3: Normalize (NormalizationError -> empty results)
     try:
         normalized_tree = coq_normalize(constr_node)
         cse_tree = cse_normalize(normalized_tree)
@@ -217,7 +462,7 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
     if cse_tree is None:
         cse_tree = normalized_tree
 
-    # WL histogram + screening + scoring -> structural ranked list
+    # WL histogram + screening with relaxed size ratio for type queries
     query_histogram = wl_histogram(cse_tree, h=3)
     candidates_with_wl = wl_screen(
         query_histogram,
@@ -225,6 +470,7 @@ def search_by_type(ctx: Any, type_expr: str, limit: int) -> list[Any]:
         ctx.wl_histograms,
         ctx.declaration_node_counts,
         n=500,
+        size_ratio=2.0,
     )
     structural_scored = score_candidates(cse_tree, candidates_with_wl, ctx)
 

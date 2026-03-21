@@ -260,7 +260,7 @@ All dependency edges shall use the relation values defined in the `dependencies`
 
 **Consequence**: Reverse dependency queries (impact analysis: "what depends on theorem X?") return sparse results because theorem-to-theorem edges are absent from the `Print Assumptions` output. Forward queries (transitive closure: "what does X rest on?") return axiom-level foundations rather than theorem-level dependencies.
 
-**Symbol-set cross-referencing** (complementary source): After Pass 2 inserts `Print Assumptions` edges, the pipeline shall also generate `"uses"` edges from symbol-set overlap. When declaration A's `symbol_set` contains a reference to the FQN of declaration B, an edge (A, B, `"uses"`) shall be inserted. This captures theorem-to-theorem relationships that `Print Assumptions` misses, because symbol sets are extracted from type signatures which reference the theorems and definitions used in the statement. Edges from both sources are deduplicated by (src, dst, relation).
+**Symbol-set cross-referencing** (complementary source): After Pass 2 inserts `Print Assumptions` edges, the pipeline shall also generate `"uses"` edges from symbol-set overlap. For each symbol in declaration A's `symbol_set`, the pipeline shall resolve it to a declaration ID using the same multi-strategy name resolution (exact match, `Coq.` prefix, suffix match) described in the Name Resolution Strategy section below. When a symbol resolves to declaration B, an edge (A, B, `"uses"`) shall be inserted. This captures theorem-to-theorem relationships that `Print Assumptions` misses, because symbol sets are extracted from type signatures which reference the theorems and definitions used in the statement. Edges from both sources are deduplicated by (src, dst, relation).
 
 When both sources are available for a declaration, their edges shall be merged and deduplicated.
 
@@ -276,7 +276,33 @@ Unresolved targets (no match after all strategies) are silently skipped — they
 
 The suffix reverse lookup table shall be built once per `resolve_and_insert_dependencies` call from all FQNs in the name-to-ID map.
 
-### 4.6 Post-Processing
+### 4.6 Premise-Based Dependency Import
+
+#### import_dependencies(dependency_graph_path, db_path)
+
+- REQUIRES: `db_path` is a path to an existing index database created by `run_extraction`. `dependency_graph_path` is a path to a JSON Lines file of DependencyEntry records (produced by `extract_dependency_graph` as specified in [extraction-dependency-graph.md](extraction-dependency-graph.md)).
+- ENSURES: For each DependencyEntry, the pipeline resolves `theorem_name` and each `depends_on[].name` to declaration IDs in the existing index. For each resolved pair, it inserts an edge `(src_id, dst_id, "uses")` into the `dependencies` table. Edges already present (from prior import or from Pass 2) are skipped via the `(src, dst, relation)` primary key constraint. Unresolvable names (not in the index) are silently skipped.
+- MAINTAINS: The existing index data (declarations, WL vectors, FTS, symbol frequencies) is not modified. Only the `dependencies` table gains new rows.
+
+This import provides **proof-body-level** theorem-to-theorem dependency edges that cannot be obtained from `.vo`-only analysis. It complements the three Pass 2 sources (tree-based, `Print Assumptions`, symbol-set cross-referencing), which capture only type-signature-level and axiom-level dependencies.
+
+#### Name resolution
+
+The same multi-strategy resolver used in Pass 2 (§4.5) shall be reused: exact match, `Coq.` prefix, suffix match. The suffix lookup table shall be built from the existing index's declaration names.
+
+> **Given** an index database with `Nat.add_comm` indexed and a dependency graph entry `{"theorem_name": "Coq.Arith.PeanoNat.Nat.add_assoc", "depends_on": [{"name": "Coq.Arith.PeanoNat.Nat.add_comm", "kind": "lemma"}]}`,
+> **When** `import_dependencies` is called,
+> **Then** a `(add_assoc_id, add_comm_id, "uses")` edge is inserted into the `dependencies` table.
+
+> **Given** a dependency graph entry referencing `"MyProject.custom_lemma"` which is not in the index,
+> **When** `import_dependencies` is called,
+> **Then** the unresolvable reference is skipped with no error.
+
+> **Given** `import_dependencies` is called twice on the same data,
+> **When** the second call executes,
+> **Then** no duplicate edges are inserted (idempotent due to primary key constraint).
+
+### 4.7 Post-Processing
 
 After both passes:
 
@@ -285,7 +311,7 @@ After both passes:
 3. Write `declarations` metadata key with the count of indexed declarations.
 4. Call `writer.finalize()` — FTS5 rebuild + integrity check
 
-### 4.7 Existing Database Replacement
+### 4.8 Existing Database Replacement
 
 When `run_extraction` is called and a file exists at `db_path`:
 
@@ -300,7 +326,7 @@ When `run_extraction` is called and a file exists at `db_path`:
 > **When** `run_extraction` is called,
 > **Then** the index is created normally (no error, no no-op).
 
-### 4.8 Library Discovery
+### 4.9 Library Discovery
 
 #### discover_libraries(target)
 
@@ -332,7 +358,7 @@ All paths are relative to the Coq base directory returned by `coqc -where`. File
 > **When** `discover_libraries("unknown")` is called
 > **Then** raises `ExtractionError` listing valid identifiers: stdlib, mathcomp, stdpp, flocq, coquelicot, coqinterval
 
-### 4.9 Library Version Detection
+### 4.10 Library Version Detection
 
 #### detect_library_version(library)
 
@@ -360,7 +386,7 @@ All paths are relative to the Coq base directory returned by `coqc -where`. File
 > **When** `detect_library_version("stdlib")` is called
 > **Then** returns `"8.19.2"`
 
-### 4.10 Progress Reporting
+### 4.11 Progress Reporting
 
 - REQUIRES: The caller has enabled the progress flag.
 - ENSURES: When enabled, the extraction pipeline writes progress messages to stderr for each processing stage. When disabled (the default), no progress messages are emitted.
@@ -371,7 +397,7 @@ Per-stage message format (per-declaration granularity):
 
 Each message identifies the current stage name. Messages are written to stderr so they do not interfere with structured output on stdout.
 
-### 4.11 Backend Process Lifecycle
+### 4.12 Backend Process Lifecycle
 
 When the extraction backend (coq-lsp) crashes or becomes unresponsive:
 - Abort the indexing run

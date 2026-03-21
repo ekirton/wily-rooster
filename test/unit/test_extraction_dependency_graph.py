@@ -5,12 +5,13 @@ until the production modules exist under src/poule/extraction/.
 
 Covers: dependency derivation, hypothesis exclusion, dependency classification,
 deduplication and ordering, DependencyEntry serialization, integration modes,
-and error cases.
+index import, and error cases.
 """
 
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -644,3 +645,166 @@ class TestDependencyTypes:
             depends_on=[],
         )
         assert callable(getattr(entry, "to_json", None))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# import_dependencies tests (specification/extraction.md §4.6)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def _create_test_index(db_path: Path, declarations: list[tuple[str, str]]) -> None:
+    """Create a minimal index database with declarations for import testing."""
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("""
+        CREATE TABLE declarations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            module TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            statement TEXT NOT NULL,
+            type_expr TEXT,
+            constr_tree BLOB,
+            node_count INTEGER NOT NULL CHECK(node_count > 0),
+            symbol_set TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE dependencies (
+            src INTEGER NOT NULL REFERENCES declarations(id) ON DELETE CASCADE,
+            dst INTEGER NOT NULL REFERENCES declarations(id) ON DELETE CASCADE,
+            relation TEXT NOT NULL,
+            PRIMARY KEY (src, dst, relation)
+        )
+    """)
+    for name, module in declarations:
+        conn.execute(
+            "INSERT INTO declarations (name, module, kind, statement, node_count, symbol_set) "
+            "VALUES (?, ?, 'definition', '', 1, '[]')",
+            (name, module),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _write_dep_graph(path: Path, entries: list[dict]) -> None:
+    """Write DependencyEntry dicts as JSON Lines."""
+    with open(path, "w") as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+
+
+class TestImportDependencies:
+    """Tests for import_dependencies (spec §4.6)."""
+
+    def test_import_inserts_edges(self, tmp_path):
+        from Poule.extraction.dependency_graph import import_dependencies
+
+        db_path = tmp_path / "index.db"
+        _create_test_index(db_path, [
+            ("Coq.Arith.PeanoNat.Nat.add_comm", "Coq.Arith.PeanoNat"),
+            ("Coq.Arith.PeanoNat.Nat.add_0_r", "Coq.Arith.PeanoNat"),
+            ("Coq.Init.Datatypes.nat", "Coq.Init.Datatypes"),
+        ])
+        deps_path = tmp_path / "deps.jsonl"
+        _write_dep_graph(deps_path, [{
+            "theorem_name": "Coq.Arith.PeanoNat.Nat.add_comm",
+            "source_file": "theories/Arith/PeanoNat.v",
+            "project_id": "coq-stdlib",
+            "depends_on": [
+                {"name": "Coq.Arith.PeanoNat.Nat.add_0_r", "kind": "lemma"},
+                {"name": "Coq.Init.Datatypes.nat", "kind": "inductive"},
+            ],
+        }])
+
+        inserted = import_dependencies(deps_path, db_path)
+        assert inserted == 2
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute("SELECT COUNT(*) FROM dependencies").fetchone()
+        assert rows[0] == 2
+        conn.close()
+
+    def test_import_skips_unresolvable_names(self, tmp_path):
+        from Poule.extraction.dependency_graph import import_dependencies
+
+        db_path = tmp_path / "index.db"
+        _create_test_index(db_path, [
+            ("Coq.Arith.PeanoNat.Nat.add_comm", "Coq.Arith.PeanoNat"),
+        ])
+        deps_path = tmp_path / "deps.jsonl"
+        _write_dep_graph(deps_path, [{
+            "theorem_name": "Coq.Arith.PeanoNat.Nat.add_comm",
+            "source_file": "theories/Arith/PeanoNat.v",
+            "project_id": "coq-stdlib",
+            "depends_on": [
+                {"name": "MyProject.unknown_lemma", "kind": "lemma"},
+            ],
+        }])
+
+        inserted = import_dependencies(deps_path, db_path)
+        assert inserted == 0
+
+    def test_import_is_idempotent(self, tmp_path):
+        from Poule.extraction.dependency_graph import import_dependencies
+
+        db_path = tmp_path / "index.db"
+        _create_test_index(db_path, [
+            ("Coq.A", "Coq"),
+            ("Coq.B", "Coq"),
+        ])
+        deps_path = tmp_path / "deps.jsonl"
+        _write_dep_graph(deps_path, [{
+            "theorem_name": "Coq.A",
+            "source_file": "A.v",
+            "project_id": "test",
+            "depends_on": [{"name": "Coq.B", "kind": "definition"}],
+        }])
+
+        import_dependencies(deps_path, db_path)
+        # Second import should not fail or duplicate
+        import_dependencies(deps_path, db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute("SELECT COUNT(*) FROM dependencies").fetchone()
+        assert rows[0] == 1
+        conn.close()
+
+    def test_import_uses_suffix_resolution(self, tmp_path):
+        """Spec §4.6: same multi-strategy resolver as Pass 2."""
+        from Poule.extraction.dependency_graph import import_dependencies
+
+        db_path = tmp_path / "index.db"
+        _create_test_index(db_path, [
+            ("Coq.Arith.PeanoNat.Nat.add_comm", "Coq.Arith.PeanoNat"),
+            ("Coq.Arith.PeanoNat.Nat.add_0_r", "Coq.Arith.PeanoNat"),
+        ])
+        deps_path = tmp_path / "deps.jsonl"
+        # Use short name that should resolve via suffix match
+        _write_dep_graph(deps_path, [{
+            "theorem_name": "Coq.Arith.PeanoNat.Nat.add_comm",
+            "source_file": "PeanoNat.v",
+            "project_id": "test",
+            "depends_on": [{"name": "Nat.add_0_r", "kind": "lemma"}],
+        }])
+
+        inserted = import_dependencies(deps_path, db_path)
+        assert inserted == 1
+
+    def test_import_skips_self_loops(self, tmp_path):
+        from Poule.extraction.dependency_graph import import_dependencies
+
+        db_path = tmp_path / "index.db"
+        _create_test_index(db_path, [
+            ("Coq.A", "Coq"),
+        ])
+        deps_path = tmp_path / "deps.jsonl"
+        _write_dep_graph(deps_path, [{
+            "theorem_name": "Coq.A",
+            "source_file": "A.v",
+            "project_id": "test",
+            "depends_on": [{"name": "Coq.A", "kind": "definition"}],
+        }])
+
+        inserted = import_dependencies(deps_path, db_path)
+        assert inserted == 0

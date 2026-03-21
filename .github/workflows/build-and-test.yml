@@ -5,12 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  release:
+    types: [published]
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/poule
 
 jobs:
   build-and-integration:
+    # Skip releases that aren't index-merged (e.g. index-libraries)
+    if: github.event_name != 'release' || github.event.release.tag_name == 'index-merged'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,15 +30,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get index fingerprint
+        id: index
+        run: |
+          ts=$(gh api repos/${{ github.repository }}/releases/tags/index-merged \
+            --jq '.assets[] | select(.name=="index.db") | .updated_at' 2>/dev/null || echo "unknown")
+          echo "fingerprint=$ts" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
           load: true
           tags: |
             ${{ env.IMAGE }}:sha-${{ github.sha }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
+            ${{ (github.ref == 'refs/heads/main' || github.event_name == 'release') && format('{0}:latest', env.IMAGE) || '' }}
+          build-args: |
+            CACHEBUST_INDEX=${{ steps.index.outputs.fingerprint }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

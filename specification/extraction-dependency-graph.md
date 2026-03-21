@@ -110,6 +110,22 @@ When the `--deps` flag is passed to the extraction CLI, the campaign orchestrato
 
 - ENSURES: The dependency graph file contains one DependencyEntry per successfully extracted theorem.
 
+#### Index import mode
+
+```
+import_dependencies(dependency_graph_path, db_path)
+```
+
+- REQUIRES: `dependency_graph_path` is a valid JSON Lines file of DependencyEntry records. `db_path` is a path to an existing index database.
+- ENSURES: For each DependencyEntry, resolves `theorem_name` and each `depends_on[].name` to declaration IDs in the index. Inserts `(src_id, dst_id, "uses")` edges into the `dependencies` table. Existing edges are skipped (idempotent via primary key). Unresolvable names are skipped silently.
+- MAINTAINS: Existing index data (declarations, WL vectors, FTS, symbol frequencies) is not modified.
+
+> **Given** a dependency graph file and an index database both containing `Nat.add_comm` and `Nat.add_0_r`
+> **When** `import_dependencies` is called with a DependencyEntry linking them
+> **Then** a `"uses"` edge is inserted into the `dependencies` table
+
+See [extraction.md §4.6](extraction.md) for the full behavioral specification.
+
 ## 5. Error Specification
 
 | Condition | Behavior |

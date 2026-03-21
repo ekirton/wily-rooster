@@ -128,7 +128,7 @@ For example, you can ask Claude things like:
 - *"Find something in Flocq about rounding errors on addition"*
 
 **Exploration — navigate unfamiliar libraries:**
-- *"What's in the Coq.Arith module?"*
+- *"What's in the Corelib.Arith module?"*
 - *"Give me an overview of the MathComp ssreflect sequence lemmas"*
 - *"What typeclasses does std++ provide for finite maps?"*
 - *"How does Coquelicot define integration?"*
@@ -136,11 +136,11 @@ For example, you can ask Claude things like:
 **Proof interaction:**
 - *"Open a proof session on `rev_involutive` in `examples/lists.v` and show me the current goal"*
 - *"Step through the proof of `add_comm` in `examples/arith.v` and explain each tactic"*
-- *"Try applying `intros` then `induction n` in my current proof session"*
+- *"Try applying `intros` then `induction l` in my current proof session"*
 
 **Profiling — find and fix performance bottlenecks:**
-- *"Profile the proof of `ring_morph` in `src/Algebra.v` — what's making it slow?"*
-- *"Profile `src/Core.v` and show me the slowest lemmas"*
+- *"Profile the proof of `ring_morph` in `examples/algebra.v` — what's making it slow?"*
+- *"Profile `examples/algebra.v` and show me the slowest lemmas"*
 - *"Why does `Qed` take 30 seconds on this proof? Is it the tactics or the kernel re-checking?"*
 - *"Compare timing before and after my optimization"*
 
@@ -177,10 +177,10 @@ Poule also provides compound workflows that orchestrate multiple tools in a sing
 
 - *`/formalize For all natural numbers, addition is commutative`* — Claude searches for existing lemmas, proposes a formal Coq statement, type-checks it, and helps build the proof interactively
 - *`/explain-proof Nat.add_comm`* — step through a proof with plain-language explanations of each tactic, including mathematical intuition
-- *`/compress-proof rev_involutive in src/Lists.v`* — find shorter proof alternatives, verify each one, present ranked options
+- *`/compress-proof rev_involutive in examples/lists.v`* — find shorter proof alternatives, verify each one, present ranked options
 - *`/proof-obligations`* — scan your project for `admit`/`Admitted`/`Axiom`, classify intent, rank by severity
 - *`/proof-repair`* — after a Coq version upgrade, systematically fix broken proofs through a build→fix→rebuild loop
-- *`/proof-lint src/Core.v`* — detect deprecated tactics, inconsistent bullets, and complex tactic chains; optionally auto-fix
+- *`/proof-lint examples/lint_targets.v`* — detect deprecated tactics, inconsistent bullets, and complex tactic chains; optionally auto-fix
 - *`/explain-error`* — parse a Coq type error, fetch relevant definitions, explain the root cause in plain language with fix suggestions
 - *`/migrate-rocq`* — bulk-rename deprecated `Coq.*` namespaces to `Rocq.*` with build verification
 - *`/check-compat`* — check dependency compatibility before you hit opaque build failures

@@ -18,3 +18,14 @@ coverage.xml
 index.db
 *.onnx
 proof-diagram.html
+
+# Coq build artifacts
+*.vo
+*.vos
+*.vok
+*.glob
+.*.aux
+.lia.cache
+Makefile.coq
+Makefile.coq.conf
+.coqdeps.d

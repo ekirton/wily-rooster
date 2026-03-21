@@ -24,6 +24,14 @@ if [ -d "$COMMANDS_SRC" ]; then
     done
 fi
 
+# ── Example files ─────────────────────────────────────────────────────────
+# Symlink baked-in examples into the working directory so prompts like
+# "Open a proof session on examples/lists.v" resolve correctly.
+# No-op when $PWD is /poule (dev container) or user has their own examples/.
+if [ ! -e examples ] && [ -d /poule/examples ]; then
+    ln -sf /poule/examples examples
+fi
+
 # ── MCP config ──────────────────────────────────────────────────────────
 # Claude Code discovers MCP servers via .mcp.json in the working directory.
 # Copy the baked-in config so it's present regardless of where Claude runs.

@@ -155,7 +155,7 @@ LABEL claude.code.version=${CLAUDE_CODE_VERSION}
 
 # ============================================================================
 # Stage 3: runtime — Application code + entrypoint
-# Rebuilds on every source change (fast — just file copies).
+# Layer order: index (changes rarely) → source (changes often).
 # Claude Code is inherited from app-deps (already in /opt/claude).
 # ============================================================================
 FROM app-deps AS runtime
@@ -164,21 +164,24 @@ ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_USER=poule
 
+# ── Bake index.db: download from index-merged release and validate ───────
+# Placed before source COPY so that source-only changes don't re-download
+# the index.  CACHEBUST_INDEX is set by CI to the index-merged release
+# asset timestamp — when a new index is published, the layer is invalidated.
+USER root
+RUN mkdir -p /data && chown ${HOST_UID}:${HOST_GID} /data
+USER ${HOST_USER}
+
+ARG CACHEBUST_INDEX=0
+COPY --chown=${HOST_UID}:${HOST_GID} docker/validate-index.py /tmp/validate-index.py
+RUN python3 /tmp/validate-index.py && rm -f /tmp/validate-index.py
+
+# ── Application code ─────────────────────────────────────────────────────
 COPY --chown=${HOST_UID}:${HOST_GID} src/ src/
 COPY --chown=${HOST_UID}:${HOST_GID} test/ test/
 COPY --chown=${HOST_UID}:${HOST_GID} examples/ examples/
 COPY --chown=${HOST_UID}:${HOST_GID} commands/ commands/
 COPY --chown=${HOST_UID}:${HOST_GID} .mcp.json CLAUDE.md README.md ./
-
-# ── Bake index.db: download from index-merged release and validate ───────
-# The index is a build-time dependency — if the release is missing or versions
-# don't match the installed opam packages, the build fails.
-USER root
-RUN mkdir -p /data && chown ${HOST_UID}:${HOST_GID} /data
-USER ${HOST_USER}
-
-COPY --chown=${HOST_UID}:${HOST_GID} docker/validate-index.py /tmp/validate-index.py
-RUN python3 /tmp/validate-index.py && rm -f /tmp/validate-index.py
 
 # Minimal zshrc (overridden by persistent home mount at runtime)
 RUN cat > ~/.zshrc << 'ZSHEOF'

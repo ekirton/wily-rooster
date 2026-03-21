@@ -646,3 +646,68 @@ class TestNormalizationIntegration:
 
         # Should find "nat" as a constant
         assert "nat" in consts
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Extended syntax support tests
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestBracketBinders:
+    """Maximal implicit binders [A : T] — Coq bracket syntax."""
+
+    def test_forall_with_bracket_binder(self):
+        parser = TypeExprParser()
+        result = parser.parse("forall [A : Type], A -> A")
+        assert isinstance(result, Prod)
+        assert result.name == "A"
+
+    def test_bracket_in_expression(self):
+        parser = TypeExprParser()
+        # Bracket as grouping in non-binder position
+        result = parser.parse("forall [A : Type] [B : Type], A -> B")
+        assert isinstance(result, Prod)
+
+
+class TestScopeAnnotations:
+    """Scope delimiters %name stripped during tokenization."""
+
+    def test_scope_stripped_from_bool_expr(self):
+        parser = TypeExprParser()
+        # (Nat.even n || Nat.odd n)%bool = true
+        result = parser.parse("forall n : nat, (Nat.even n || Nat.odd n) = true")
+        assert isinstance(result, Prod)
+
+    def test_scope_stripped_from_type(self):
+        parser = TypeExprParser()
+        result = parser.parse("forall n m : nat, n + m = m + n")
+        assert isinstance(result, Prod)
+
+
+class TestIffOperator:
+    """<-> (iff) operator support."""
+
+    def test_iff_parsed_as_infix(self):
+        parser = TypeExprParser()
+        result = parser.parse("forall n m : nat, n > m <-> m < n")
+        assert isinstance(result, Prod)
+
+    def test_iff_separate_from_arrow(self):
+        """<-> must not be split into < and ->."""
+        tokens = tokenize("A <-> B")
+        infix_tokens = [t for t in tokens if t.kind == TokenKind.INFIX_OP]
+        assert any(t.value == "<->" for t in infix_tokens)
+
+
+class TestBooleanOperators:
+    """|| and && support."""
+
+    def test_or_operator(self):
+        parser = TypeExprParser()
+        result = parser.parse("forall n : nat, Nat.even n || Nat.odd n = true")
+        assert isinstance(result, Prod)
+
+    def test_and_operator(self):
+        parser = TypeExprParser()
+        result = parser.parse("forall n m : nat, Nat.odd n && Nat.odd m = true")
+        assert isinstance(result, Prod)

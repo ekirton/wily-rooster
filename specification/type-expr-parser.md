@@ -65,14 +65,22 @@ Token kinds:
 | `RPAREN` | `)` | |
 | `LBRACE` | `{` | |
 | `RBRACE` | `}` | |
+| `LBRACKET` | `[` | |
+| `RBRACKET` | `]` | |
 | `PIPE` | <code>&#124;</code> | |
 | `UNDERSCORE` | Standalone `_` (not followed by alphanumeric/`_`/`'`) | |
-| `INFIX_OP` | Infix operator | `+`, `*`, `=`, `<`, `<=`, `>=`, `<>`, `\/`, `/\` |
+| `INFIX_OP` | Infix operator | `+`, `*`, `=`, `<`, `<=`, `>=`, `<>`, `<->`, `\/`, `/\`, `\|\|`, `&&`, `=?`, `?=` |
 | `EOF` | End of input | |
 
 The standalone `_` token (UNDERSCORE) is distinguished from `_`-prefixed identifiers: `_` followed by alphanumeric, `_`, or `'` is an IDENT; `_` alone or followed by whitespace/punctuation is UNDERSCORE.
 
-Multi-character operators (`->`, `=>`, `<=`, `>=`, `<>`, `\/`, `/\`) shall be recognized before single-character operators.
+Multi-character operators (`<->`, `->`, `=>`, `<=`, `>=`, `<>`, `<=?`, `=?`, `?=`, `||`, `&&`, `\/`, `/\`) shall be recognized before single-character operators. Three-character operators (`<->`, `<=?`) shall be recognized before two-character operators.
+
+#### Preprocessing
+
+Before tokenization, the input string shall be preprocessed to strip Coq scope annotations (substrings matching `%[a-zA-Z_][a-zA-Z0-9_]*`). For example, `(n + m)%nat` becomes `(n + m)`. The characters `@`, `?` (standalone), `!`, `~`, `` ` ``, and `#` shall be skipped during tokenization.
+
+Coq control-flow keywords (`if`, `then`, `else`, `let`, `in`, `match`, `with`, `end`, `return`, `as`, `fix`, `cofix`) shall be tokenized as `IDENT` — they appear in type signatures but their control-flow semantics are not relevant for indexing.
 
 > **Given** the input `"forall n : nat, n"`,
 > **When** tokenized,
@@ -88,7 +96,10 @@ The parser shall use Pratt (top-down operator precedence) parsing with the follo
 | 65 | `\/`, `/\` | left |
 | 60 | `*` | left |
 | 50 | `+`, `-` | left |
-| 30 | `=`, `<>` | left |
+| 40 | `&&` | left |
+| 35 | `\|\|` | left |
+| 30 | `=`, `<>`, `=?`, `?=` | left |
+| 20 | `<->` | left |
 | 10 | `->` | right |
 
 Function application (juxtaposition) binds tighter than all infix operators. The parser shall greedily consume adjacent primary expressions as application arguments.
@@ -138,7 +149,8 @@ Binder groups for `forall` and `fun` shall be parsed in three forms:
 
 1. **Parenthesized**: `(name1 name2 ... : Type)` — explicit typed binder group
 2. **Implicit**: `{name1 name2 ... : Type}` — implicit typed binder group (produces same ConstrNode as explicit)
-3. **Unparenthesized**: `name1 name2 ... : Type` — typed binder group without delimiters (only one group before the separator `,` or `=>`)
+3. **Maximal implicit**: `[name1 name2 ... : Type]` — maximal implicit binder group (produces same ConstrNode as explicit and implicit)
+4. **Unparenthesized**: `name1 name2 ... : Type` — typed binder group without delimiters (only one group before the separator `,` or `=>`)
 
 For grouped binders like `(x y : T)`, the type `T` is shared by all names in the group. The names are not in scope during parsing of `T` (they are added after the group is complete). Subsequent binder groups DO have access to previously bound names.
 

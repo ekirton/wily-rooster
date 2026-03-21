@@ -42,6 +42,8 @@ class TokenKind(Enum):
     RPAREN = auto()
     LBRACE = auto()
     RBRACE = auto()
+    LBRACKET = auto()
+    RBRACKET = auto()
     PIPE = auto()
     UNDERSCORE = auto()
     INFIX_OP = auto()
@@ -74,6 +76,11 @@ _INFIX_BP: dict[str, tuple[int, int]] = {
     "*": (60, 61),
     "\\/": (65, 66),
     "/\\": (65, 66),
+    "<->": (20, 21),
+    "||": (35, 36),
+    "&&": (40, 41),
+    "=?": (30, 31),
+    "?=": (30, 31),
     "<": (70, 71),
     "<=": (70, 71),
     ">": (70, 71),
@@ -88,11 +95,17 @@ _PRIMARY_STARTS = frozenset({
     TokenKind.UNDERSCORE,
     TokenKind.LPAREN,
     TokenKind.LBRACE,
+    TokenKind.LBRACKET,
 })
+
+# Regex for scope annotations: )%ident or trailing %ident
+_SCOPE_RE = __import__("re").compile(r"%[a-zA-Z_][a-zA-Z0-9_]*")
 
 
 def tokenize(text: str) -> list[Token]:
     """Tokenize a Coq type expression string into a list of Tokens."""
+    # Pre-process: strip Coq scope annotations (%nat_scope, %bool, etc.)
+    text = _SCOPE_RE.sub("", text)
     tokens: list[Token] = []
     i = 0
     n = len(text)
@@ -107,6 +120,19 @@ def tokenize(text: str) -> list[Token]:
 
         pos = i
 
+        # Three-character operators (check before two-char)
+        if i + 2 < n:
+            three = text[i : i + 3]
+            if three == "<->":
+                tokens.append(Token(TokenKind.INFIX_OP, "<->", pos))
+                i += 3
+                continue
+            if three in ("<=?", "=?b", "<?b"):
+                # Decidable comparison notations — treat as identifiers
+                tokens.append(Token(TokenKind.IDENT, three, pos))
+                i += 3
+                continue
+
         # Two-character operators (check before single-char)
         if i + 1 < n:
             two = text[i : i + 2]
@@ -120,6 +146,22 @@ def tokenize(text: str) -> list[Token]:
                 continue
             if two in ("<=", ">=", "<>"):
                 tokens.append(Token(TokenKind.INFIX_OP, two, pos))
+                i += 2
+                continue
+            # Decidable operators: =?, <=?, ?=
+            if two in ("=?", "?="):
+                tokens.append(Token(TokenKind.INFIX_OP, two, pos))
+                i += 2
+                continue
+
+        # Boolean operators: || and &&
+        if i + 1 < n:
+            if two == "||":
+                tokens.append(Token(TokenKind.INFIX_OP, "||", pos))
+                i += 2
+                continue
+            if two == "&&":
+                tokens.append(Token(TokenKind.INFIX_OP, "&&", pos))
                 i += 2
                 continue
 
@@ -150,6 +192,14 @@ def tokenize(text: str) -> list[Token]:
             continue
         if ch == "}":
             tokens.append(Token(TokenKind.RBRACE, "}", pos))
+            i += 1
+            continue
+        if ch == "[":
+            tokens.append(Token(TokenKind.LBRACKET, "[", pos))
+            i += 1
+            continue
+        if ch == "]":
+            tokens.append(Token(TokenKind.RBRACKET, "]", pos))
             i += 1
             continue
         if ch == ":":
@@ -187,6 +237,30 @@ def tokenize(text: str) -> list[Token]:
             i += 1
             continue
 
+        # @ (explicit application marker) — skip it
+        if ch == "@":
+            i += 1
+            continue
+
+        # ? followed by identifier (existential variable) — treat as identifier
+        if ch == "?" and i + 1 < n and (text[i + 1].isalpha() or text[i + 1] == "_"):
+            j = i + 1
+            while j < n and (text[j].isalnum() or text[j] in ("_", "'", ".")):
+                j += 1
+            tokens.append(Token(TokenKind.IDENT, text[i:j], pos))
+            i = j
+            continue
+
+        # Standalone ?, !, ~, `, # — skip (negation, bang, etc.)
+        if ch in ("?", "!", "`", "#", "~"):
+            i += 1
+            continue
+
+        # Standalone / or \ not part of /\ or \/ — skip
+        if ch in ("/", "\\"):
+            i += 1
+            continue
+
         # Numbers
         if ch.isdigit():
             j = i
@@ -213,6 +287,11 @@ def tokenize(text: str) -> list[Token]:
                 tokens.append(Token(TokenKind.FORALL, word, pos))
             elif word == "fun":
                 tokens.append(Token(TokenKind.FUN, word, pos))
+            elif word in ("if", "then", "else", "let", "in",
+                          "match", "with", "end", "return",
+                          "as", "fix", "cofix"):
+                # Control-flow keywords — treat as identifiers for indexing
+                tokens.append(Token(TokenKind.IDENT, word, pos))
             else:
                 tokens.append(Token(TokenKind.IDENT, word, pos))
             i = j
@@ -353,9 +432,25 @@ class TypeExprParser:
         if tok.kind == TokenKind.LBRACE:
             pos += 1
             pos, inner = self._expr(tokens, pos, binders, 0)
+            if tokens[pos].kind == TokenKind.PIPE:
+                # Sig type {x : T | P} — parse the proposition after |
+                pos += 1  # consume |
+                pos, prop = self._expr(tokens, pos, binders, 0)
+                # For indexing purposes, treat as Prod("_", inner, prop)
+                inner = Prod("_", inner, prop)
             if tokens[pos].kind != TokenKind.RBRACE:
                 raise ParseError(
                     f"Expected '}}' at position {tokens[pos].pos}"
+                )
+            return pos + 1, inner
+
+        if tok.kind == TokenKind.LBRACKET:
+            # Maximal implicit binders [A : T] — treat like {A : T}
+            pos += 1
+            pos, inner = self._expr(tokens, pos, binders, 0)
+            if tokens[pos].kind != TokenKind.RBRACKET:
+                raise ParseError(
+                    f"Expected ']' at position {tokens[pos].pos}"
                 )
             return pos + 1, inner
 
@@ -435,6 +530,33 @@ class TypeExprParser:
                 if tokens[pos].kind != TokenKind.RBRACE:
                     raise ParseError(
                         f"Expected '}}' at position {tokens[pos].pos}"
+                    )
+                pos += 1
+                for name in names:
+                    all_pairs.append((name, ty))
+                    current_binders.append(name)
+                continue
+
+            if tok.kind == TokenKind.LBRACKET:
+                # Maximal implicit group: [x y ... : T]
+                pos += 1
+                names = []
+                while tokens[pos].kind == TokenKind.IDENT:
+                    names.append(tokens[pos].value)
+                    pos += 1
+                if not names:
+                    raise ParseError(
+                        f"Expected variable name at position {tokens[pos].pos}"
+                    )
+                if tokens[pos].kind != TokenKind.COLON:
+                    raise ParseError(
+                        f"Expected ':' at position {tokens[pos].pos}"
+                    )
+                pos += 1
+                pos, ty = self._expr(tokens, pos, current_binders, 0)
+                if tokens[pos].kind != TokenKind.RBRACKET:
+                    raise ParseError(
+                        f"Expected ']' at position {tokens[pos].pos}"
                     )
                 pos += 1
                 for name in names:

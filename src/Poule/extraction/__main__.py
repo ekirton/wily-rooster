@@ -9,10 +9,10 @@ import click
 from Poule.extraction.pipeline import run_extraction
 
 
-@click.command()
+@click.group(invoke_without_command=True)
 @click.option(
     "--target",
-    required=True,
+    default=None,
     help=(
         'Library targets separated by "+". '
         "Built-in targets: stdlib, mathcomp. "
@@ -21,7 +21,7 @@ from Poule.extraction.pipeline import run_extraction
 )
 @click.option(
     "--db",
-    required=True,
+    default=None,
     type=click.Path(path_type=Path),
     help="Path to the output SQLite index database.",
 )
@@ -38,8 +38,24 @@ from Poule.extraction.pipeline import run_extraction
     default=False,
     help="Print progress messages to stderr during extraction.",
 )
-def main(target: str, db: Path, verbose: bool, progress: bool) -> None:
+@click.pass_context
+def cli(
+    ctx: click.Context,
+    target: str | None,
+    db: Path | None,
+    verbose: bool,
+    progress: bool,
+) -> None:
     """Extract and index Coq libraries into a SQLite database."""
+    # Backward compatibility: `python -m Poule.extraction --target X --db Y`
+    # invokes the build directly without a subcommand.
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if target is None or db is None:
+        click.echo(ctx.get_help())
+        return
+
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(name)s %(message)s")
         logging.getLogger("poule.extraction").setLevel(logging.DEBUG)
@@ -65,5 +81,31 @@ def main(target: str, db: Path, verbose: bool, progress: bool) -> None:
     )
 
 
+@cli.command("import-deps")
+@click.option(
+    "--deps",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to the JSON Lines dependency graph file.",
+)
+@click.option(
+    "--db",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to the existing index database.",
+)
+def import_deps(deps: Path, db: Path) -> None:
+    """Import premise-based dependency edges into an existing index."""
+    from Poule.extraction.dependency_graph import import_dependencies
+
+    try:
+        inserted = import_dependencies(deps, db)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Done — imported {inserted} dependency edges")
+
+
 if __name__ == "__main__":
-    main()
+    cli()
